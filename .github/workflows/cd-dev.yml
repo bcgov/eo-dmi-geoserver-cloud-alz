@@ -1,0 +1,24 @@
+# CD dev — plan + apply on merge to main (and on demand). Gated by the "dev"
+# GitHub Environment.
+name: cd-dev
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+# Grant the OIDC token scope so the called reusable workflow can authenticate.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: dev
+      apply: true
+    secrets: inherit

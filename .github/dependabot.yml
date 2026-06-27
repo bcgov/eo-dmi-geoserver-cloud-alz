@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned and current. Dependabot bumps both the major-tag
+  # (first-party) and commit-SHA (third-party) pins, and digest-pins where it can.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(actions)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - github-actions
+
+  # Keep the azurerm / random provider constraints current across every module
+  # and the shared stack. Grouped so a provider bump lands as one reviewable PR.
+  - package-ecosystem: terraform
+    directories:
+      - "/modules/*"
+      - "/stack"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(terraform)"
+    groups:
+      terraform-providers:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - terraform
