@@ -19,48 +19,69 @@ locals {
   # Only the gateway has external ingress; all others are service-to-service.
   # ---------------------------------------------------------------------------
   services = {
-    gateway = { repo = "geoserver-cloud-gateway", port = 8080, external = true, extra_env = {
-      GEOSERVER_BASE_PATH = "/geoserver/cloud"
-      # ACA serves a valid Microsoft-managed TLS cert on the default domain, but keep the
-      # insecure trust manager as belt-and-suspenders for internal service-to-service TLS
-      # (SAN/hostname edge cases when traffic transits the internal LB / private endpoint).
-      SPRING_CLOUD_GATEWAY_HTTPCLIENT_SSL_USEINSECURETRUSTMANAGER = "true"
-      # ---------------------------------------------------------------------------
-      # Backend service targets.
-      #
-      # The gateway routes (config/gateway-service.yml in geoserver-cloud-config) do NOT
-      # use service discovery — each route is "uri: ${targets.<svc>}". In the 'standalone'
-      # Spring profile those placeholders default to plain http://<svc>:8080, i.e. the
-      # docker-compose service host on the container port. On ACA that name resolves to the
-      # Kubernetes ClusterIP on the pod's target port (8080), which the platform
-      # NetworkPolicy blocks (direct pod-to-pod) — every route then times out (HTTP 500).
-      #
-      # Override the targets to each service's ACA ingress FQDN over HTTPS (443) so traffic
-      # flows through Envoy instead. SPRING_APPLICATION_JSON is the highest-precedence
-      # property source and expresses the exact property names (including the literal hyphen
-      # in 'webui-demo', which env-var relaxed binding cannot represent unambiguously).
-      SPRING_APPLICATION_JSON = jsonencode({
-        targets = {
-          wms          = "https://wms.${module.container_app_environment.default_domain}"
-          wfs          = "https://wfs.${module.container_app_environment.default_domain}"
-          wcs          = "https://wcs.${module.container_app_environment.default_domain}"
-          wps          = "https://wps.${module.container_app_environment.default_domain}"
-          rest         = "https://rest.${module.container_app_environment.default_domain}"
-          gwc          = "https://gwc.${module.container_app_environment.default_domain}"
-          webui        = "https://webui.${module.container_app_environment.default_domain}"
-          "webui-demo" = "https://webui.${module.container_app_environment.default_domain}"
-          acl          = "https://acl.${module.container_app_environment.default_domain}"
-        }
-      })
-    } }
-    webui = { repo = "geoserver-cloud-webui", port = 8080, external = true, extra_env = {} }
-    wms   = { repo = "geoserver-cloud-wms", port = 8080, external = true, extra_env = {} }
-    wfs   = { repo = "geoserver-cloud-wfs", port = 8080, external = true, extra_env = {} }
-    wcs   = { repo = "geoserver-cloud-wcs", port = 8080, external = true, extra_env = {} }
-    wps   = { repo = "geoserver-cloud-wps", port = 8080, external = true, extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig" } }
-    rest  = { repo = "geoserver-cloud-rest", port = 8080, external = true, extra_env = {} }
-    gwc   = { repo = "geoserver-cloud-gwc", port = 8080, external = true, extra_env = {} }
+    # Gateway: external = true so the App Service can reach it via VNet integration.
+    # All other services are internal-only; gateway routes to them via .internal. FQDNs.
+    gateway = {
+      repo     = "geoserver-cloud-gateway"
+      port     = 8080
+      external = true
+      sticky   = false
+      # Per-service scaling + resources (independent per GeoServer Cloud service).
+      # cpu/memory must be a valid ACA Consumption pair (0.25:0.5Gi, 0.5:1Gi,
+      # 0.75:1.5Gi, 1.0:2Gi, 1.25:2.5Gi … 2.0:4Gi). Tune per load test.
+      # min_replicas = 1: the gateway is the single entry point the Node proxy talks
+      # to. At 0 it scales to zero and the first request after idle cold-starts —
+      # which the user sees as "Bad Gateway" while the proxy waits for the cold
+      # gateway. Keep it warm.
+      min_replicas = 1
+      max_replicas = 3
+      cpu          = 1.0
+      memory       = "2Gi"
+      extra_env = {
+        GEOSERVER_BASE_PATH                                         = "/geoserver/cloud"
+        SPRING_CLOUD_GATEWAY_HTTPCLIENT_SSL_USEINSECURETRUSTMANAGER = "true"
+        # Use .internal. FQDNs — backends are internal-only (external = false).
+        # .internal. is resolvable within the ACA environment for all services.
+        SPRING_APPLICATION_JSON = jsonencode({
+          targets = {
+            wms          = "https://wms.internal.${module.container_app_environment.default_domain}"
+            wfs          = "https://wfs.internal.${module.container_app_environment.default_domain}"
+            wcs          = "https://wcs.internal.${module.container_app_environment.default_domain}"
+            wps          = "https://wps.internal.${module.container_app_environment.default_domain}"
+            rest         = "https://rest.internal.${module.container_app_environment.default_domain}"
+            gwc          = "https://gwc.internal.${module.container_app_environment.default_domain}"
+            webui        = "https://webui.internal.${module.container_app_environment.default_domain}"
+            "webui-demo" = "https://webui.internal.${module.container_app_environment.default_domain}"
+            acl          = "https://acl.internal.${module.container_app_environment.default_domain}"
+          }
+        })
+      }
+    }
+    # webui: sticky sessions required for Wicket page state; min 1 so the OIDC
+    # proxy's sec-username header always lands on a warm replica.
+    webui = { repo = "geoserver-cloud-webui", port = 8080, external = false, sticky = true, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    wms   = { repo = "geoserver-cloud-wms", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 4, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    wfs   = { repo = "geoserver-cloud-wfs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    wcs   = { repo = "geoserver-cloud-wcs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    # wps: ACL profile excluded (WPS service does not use data-layer ACL).
+    # environment-admin-auth kept so admin credentials are consistent across services.
+    wps  = { repo = "geoserver-cloud-wps", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig,environment-admin-auth" } }
+    rest = { repo = "geoserver-cloud-rest", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    gwc  = { repo = "geoserver-cloud-gwc", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 0.5, memory = "1Gi", extra_env = {} }
   }
+
+  # Derived values used by the App Service resource (stack/main.tf).
+  proxy_fqdn   = "${var.proxy_app_service_name}.azurewebsites.net"
+  proxy_origin = "https://${local.proxy_fqdn}"
+  # Gateway ingress FQDN. The gateway is external = true, so its hostname is
+  # gateway.<default_domain> WITHOUT the ".internal." segment (that segment only
+  # applies to internal-ingress apps like the wms/wfs/... backends). Because the
+  # whole ACA environment sits behind an internal load balancer, this hostname is
+  # still only resolvable/reachable from inside the spoke VNet (App Service VNet
+  # integration, or the bastion SOCKS5 tunnel) — never from the public internet.
+  # Hitting the ".internal." form returns HTTP 404 from Envoy (no app matches that
+  # Host), which is what broke configure_geoserver_security on the first apply.
+  gateway_internal = "https://gateway.${module.container_app_environment.default_domain}"
 
   # Images imported into ACR via the server-side importImage API (no Docker daemon).
   # Sources are Docker Hub; targets match the login_server/<repo>:<tag> references
@@ -99,12 +120,13 @@ locals {
   common_env = merge({
     SPRING_PROFILES_ACTIVE = var.spring_profiles_active
 
-    # JNDI datasource for pgconfig catalog backend (maps to jndi.datasources.pgconfig.*)
-    JNDI_DATASOURCES_PGCONFIG_URL      = "jdbc:postgresql://${module.postgres.fqdn}:5432/${module.postgres.config_database_name}"
-    JNDI_DATASOURCES_PGCONFIG_USERNAME = module.postgres.administrator_login
-    JNDI_DATASOURCES_PGCONFIG_SCHEMA   = "pgconfig"
-
-    # pgconfig backend metadata (schema, init flag — maps to pgconfig.schema / pgconfig.initialize)
+    # pgconfig catalog backend datasource — GeoServer Cloud 3.x property model.
+    # 3.x builds the JNDI datasource (jndi.yml) from pgconfig.host/port/database/username,
+    # replacing 1.x's jndi.datasources.pgconfig.url form. Password is a KV secret below.
+    PGCONFIG_HOST       = module.postgres.fqdn
+    PGCONFIG_PORT       = "5432"
+    PGCONFIG_DATABASE   = module.postgres.config_database_name
+    PGCONFIG_USERNAME   = module.postgres.administrator_login
     PGCONFIG_SCHEMA     = "pgconfig"
     PGCONFIG_INITIALIZE = "true"
 
@@ -117,13 +139,18 @@ locals {
     ACL_USERNAME = "geoserver"
 
     GEOWEBCACHE_CACHE_DIR = "/tmp/geowebcache"
+
+    # environment-admin-auth extension: sets the GeoServer web-admin username at startup.
+    # The password is a KV-backed secret in common_secret_env below.
+    GEOSERVER_ADMIN_USERNAME = "admin"
   }, var.extra_service_env)
 
   common_secret_env = [
-    # JNDI datasource password (maps to jndi.datasources.pgconfig.password)
-    { name = "JNDI_DATASOURCES_PGCONFIG_PASSWORD", secret_name = "postgres-password" },
+    { name = "PGCONFIG_PASSWORD", secret_name = "postgres-password" },
     { name = "RABBITMQ_PASSWORD", secret_name = "rabbitmq-password" },
     { name = "ACL_PASSWORD", secret_name = "acl-geoserver-password-plain" },
+    # environment-admin-auth: password read at GeoServer startup from this env var.
+    { name = "GEOSERVER_ADMIN_PASSWORD", secret_name = "geoserver-admin-password" },
   ]
 
   # KV versionless secret URIs — constructed from the known vault name and secret
@@ -136,6 +163,7 @@ locals {
     { name = "postgres-password", key_vault_secret_id = "${local._kv}/postgres-password" },
     { name = "rabbitmq-password", key_vault_secret_id = "${local._kv}/rabbitmq-password" },
     { name = "acl-geoserver-password-plain", key_vault_secret_id = "${local._kv}/acl-geoserver-password-plain" },
+    { name = "geoserver-admin-password", key_vault_secret_id = "${local._kv}/geoserver-admin-password" },
   ]
 
   acl_env = {

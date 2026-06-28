@@ -43,3 +43,6 @@ terraform.rc
 # Uncomment the line below if you want to ignore planout files.
 # planout
 *local*.sh
+*local*.ps1
+*local*.md
+tfplan

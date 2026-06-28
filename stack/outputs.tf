@@ -47,3 +47,13 @@ output "key_vault_uri" {
   description = "Key Vault URI."
   value       = module.keyvault.uri
 }
+
+output "proxy_url" {
+  description = "Public URL of the Node OIDC proxy (App Service entry point)."
+  value       = "https://${azapi_resource.proxy.output.properties.defaultHostName}"
+}
+
+output "proxy_oidc_redirect_uri" {
+  description = "Keycloak redirect URI — register this in the Keycloak client's Valid Redirect URIs."
+  value       = "https://${azapi_resource.proxy.output.properties.defaultHostName}/auth/callback"
+}

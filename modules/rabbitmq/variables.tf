@@ -50,6 +50,31 @@ variable "rabbitmq_password_secret_id" {
   description = "Key Vault secret ID holding the RabbitMQ password."
 }
 
+# --- Durable storage (Azure File share for /var/lib/rabbitmq) -----------------
+
+variable "storage_account_name" {
+  type        = string
+  description = "Storage account that hosts the Azure File share for RabbitMQ's persistent data dir (created in the stack)."
+}
+
+variable "file_share_name" {
+  type        = string
+  description = "Azure File share name mounted at /var/lib/rabbitmq."
+  default     = "rabbitmq-data"
+}
+
+variable "storage_account_access_key" {
+  type        = string
+  sensitive   = true
+  description = <<-EOT
+    Access key for the storage account, used by the Container Apps Environment
+    storage registration. NOTE: azurerm_container_app_environment_storage requires
+    the key inline, so it lands in Terraform state. Acceptable for the POC (the
+    tfstate backend is VNet-locked); for prod, prefer NFS Azure Files (no key) or
+    move RabbitMQ to AKS / Azure Service Bus.
+  EOT
+}
+
 variable "cpu" {
   type        = number
   description = "vCPU for the RabbitMQ container."
@@ -64,7 +89,7 @@ variable "memory" {
 
 variable "min_replicas" {
   type        = number
-  description = "Minimum replicas. Set to 0 for scale-to-zero (note: TCP transport has no built-in trigger, so 0 means manual scale-up is required)."
+  description = "Minimum replicas. POC default 0 (scale-to-zero). TODO: set to 1 before live demos / prod — TCP transport has no built-in scale trigger, so 0 can leave the bus cold."
   default     = 0
 }
 

@@ -188,7 +188,22 @@ variable "gs_cloud_version" {
 variable "spring_profiles_active" {
   type        = string
   description = "Spring profiles for standalone + pgconfig + acl topology."
-  default     = "standalone,pgconfig,acl"
+  # environment-admin-auth: reads GEOSERVER_ADMIN_USERNAME/PASSWORD env vars to set the
+  # GeoServer web-admin credentials at startup — the only reliable way to set a known
+  # admin password across all replicas without touching the ephemeral data directory.
+  default = "standalone,pgconfig,acl,environment-admin-auth"
+}
+
+variable "reset_pgconfig_schema" {
+  type        = bool
+  description = <<-EOT
+    When true, the init job DROPs the pgconfig catalog schema before the GeoServer
+    services (re)start, forcing a clean re-initialization. Use only for a catalog
+    backend major-version migration (e.g. GeoServer 2.24 -> 3.0). DESTRUCTIVE: wipes
+    all GeoServer catalog configuration (workspaces, stores, layers, styles). Keep
+    false in normal operation.
+  EOT
+  default     = false
 }
 
 variable "acl_version" {
@@ -213,6 +228,43 @@ variable "extra_service_env" {
   type        = map(string)
   description = "Extra plain env vars applied to every GeoServer service."
   default     = {}
+}
+
+# ---------------------------------------------------------------------------
+# Node OIDC proxy (App Service)
+# ---------------------------------------------------------------------------
+variable "app_service_subnet_cidr" {
+  type        = string
+  description = "CIDR for the App Service VNet-integration subnet (/28 minimum, must be free in the spoke VNet)."
+  default     = "10.46.10.144/28"
+}
+
+variable "proxy_app_service_name" {
+  type        = string
+  description = "Globally-unique App Service name for the Node OIDC proxy (becomes <name>.azurewebsites.net)."
+}
+
+variable "proxy_sku" {
+  type        = string
+  description = "App Service Plan SKU. Minimum B1 for VNet integration; B2 recommended for headroom."
+  default     = "B2"
+}
+
+variable "proxy_image_tag" {
+  type        = string
+  description = "Tag for the node-oidc-proxy image built into ACR."
+  default     = "latest"
+}
+
+variable "oidc_issuer" {
+  type        = string
+  description = "OIDC issuer URL (Keycloak realm endpoint)."
+  default     = "https://test.loginproxy.gov.bc.ca/auth/realms/standard"
+}
+
+variable "oidc_client_id" {
+  type        = string
+  description = "Keycloak client ID for the OIDC proxy."
 }
 
 # ---------------------------------------------------------------------------

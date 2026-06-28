@@ -33,6 +33,17 @@ variable "name_prefix" {
   description = "Resource name prefix (e.g. geoserver-dev)."
 }
 
+variable "app_service_subnet_cidr" {
+  type        = string
+  description = "CIDR for the App Service VNet-integration subnet (delegated to Microsoft.Web/serverFarms, minimum /28). Must fall within the spoke VNet address space and must not overlap existing subnets."
+  default     = "10.46.10.144/28"
+
+  validation {
+    condition     = can(cidrhost(var.app_service_subnet_cidr, 0))
+    error_message = "app_service_subnet_cidr must be a valid CIDR (e.g. 10.46.10.144/28)."
+  }
+}
+
 variable "common_tags" {
   type        = map(string)
   description = "Tags applied to all resources created by this module."

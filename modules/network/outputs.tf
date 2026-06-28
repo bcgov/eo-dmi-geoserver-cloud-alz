@@ -12,3 +12,8 @@ output "private_endpoints_subnet_id" {
   description = "Resource ID of the pre-existing private-endpoints subnet."
   value       = data.azurerm_subnet.private_endpoints.id
 }
+
+output "app_service_subnet_id" {
+  description = "Resource ID of the App Service VNet-integration subnet (Microsoft.Web/serverFarms delegation)."
+  value       = azapi_resource.appservice_subnet.id
+}

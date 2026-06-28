@@ -111,6 +111,19 @@ variable "max_replicas" {
   default     = 2
 }
 
+variable "sticky_sessions" {
+  type = bool
+  # azurerm_container_app (azurerm ≥4.79) does NOT surface stickySessions in the ingress
+  # block even though the ARM property exists (properties.configuration.ingress.stickySessions).
+  # This variable is accepted for declarative intent but is NOT wired to the resource inside
+  # this module. The stack must patch it post-creation via azapi_update_resource:
+  #   type        = "Microsoft.App/containerApps@2024-03-01"
+  #   body.properties.configuration.ingress.stickySessions.affinity = "sticky"
+  # Remove this note and wire the dynamic block here once the provider exposes the property.
+  description = "Request session affinity on the ingress. NOTE: not applied inside this module due to azurerm 4.79 limitation — see comment above."
+  default     = false
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags to apply (use the naming module's common_tags)."

@@ -1,0 +1,29 @@
+{
+  "name": "node-oidc-edge-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stateless Keycloak OIDC edge proxy that fronts the internal GeoServer Cloud gateway and injects a trusted sec-username identity header.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "node --watch --enable-source-maps src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "cookie": "^1.0.2",
+    "express": "^5.2.1",
+    "jose": "^6.2.3",
+    "openid-client": "^6.8.4",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.13.2",
+    "typescript": "^6.0.3"
+  }
+}

@@ -43,6 +43,10 @@ resource "azurerm_container_app" "this" {
     # external_enabled = true exposes the app on the environment's INTERNAL load
     # balancer (the environment itself has no public IP). Only the gateway needs
     # to be reachable from the VNet; sibling services use internal-only ingress.
+    #
+    # stickySessions is NOT declared here: azurerm_container_app (azurerm ≥4.79) raises
+    # "Blocks of type sticky_sessions are not expected here" even though the ARM API accepts
+    # the property. The stack patches it via azapi_update_resource after creation.
     external_enabled           = var.external_ingress
     target_port                = var.target_port
     transport                  = var.transport

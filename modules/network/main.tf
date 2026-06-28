@@ -176,3 +176,96 @@ resource "azapi_resource" "aca_subnet" {
 
   response_export_values = ["*"]
 }
+
+# ---------------------------------------------------------------------------
+# App Service VNet-integration subnet NSG
+# Allows outbound to VNet (KV PE, ACA gateway) and internet 443 (Keycloak).
+# Deny-all implicit default prevents other traffic.
+# ---------------------------------------------------------------------------
+resource "azurerm_network_security_group" "appservice" {
+  name                = "${var.name_prefix}-appservice-nsg"
+  location            = var.location
+  resource_group_name = var.vnet_resource_group_name
+
+  security_rule {
+    name                       = "AllowVnetOutbound"
+    priority                   = 100
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+  }
+
+  security_rule {
+    name                       = "AllowInternetOutbound"
+    priority                   = 110
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "Internet"
+  }
+
+  security_rule {
+    name                       = "AllowAzureLoadBalancerInbound"
+    priority                   = 200
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
+  tags = var.common_tags
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# App Service VNet-integration subnet
+# Delegated to Microsoft.Web/serverFarms (required for regional VNet integration).
+# Created AFTER the ACA subnet to serialise writes against the same VNet parent.
+# defaultOutboundAccess = false enforces BC Gov Zero Trust / private-subnet policy.
+# ---------------------------------------------------------------------------
+resource "azapi_resource" "appservice_subnet" {
+  type      = "Microsoft.Network/virtualNetworks/subnets@2023-04-01"
+  name      = "appservice-subnet"
+  parent_id = data.azurerm_virtual_network.this.id
+  locks     = [data.azurerm_virtual_network.this.id]
+  # defaultOutboundAccess is not in the azapi 2023-04-01 schema but IS accepted
+  # by the ARM API; skip client-side schema validation so we can set it.
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      addressPrefix         = var.app_service_subnet_cidr
+      defaultOutboundAccess = false
+
+      networkSecurityGroup = {
+        id = azurerm_network_security_group.appservice.id
+      }
+
+      delegations = [
+        {
+          name = "Microsoft.Web.serverFarms"
+          properties = {
+            serviceName = "Microsoft.Web/serverFarms"
+          }
+        }
+      ]
+    }
+  }
+
+  response_export_values = ["*"]
+
+  depends_on = [azapi_resource.aca_subnet]
+}
