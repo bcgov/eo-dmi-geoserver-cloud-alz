@@ -188,22 +188,48 @@ case "${filter_code}" in
 esac
 
 # ---------------------------------------------------------------------------
-# 3. Wire headerAuth into the web/default/gwc filter chains.
-#    Inserts headerAuth as the FIRST filter. The request-header filter is a no-op
-#    when sec-username is absent, so basic/form/anonymous still work (admin access
-#    over SOCKS5 keeps working). The `rest` chain is left basic-only on purpose so
-#    admin REST is never shadowed.
+# 3. Cleanup: remove any broken idir JDBC user/group service that was uploaded
+#    during a previous apply. GeoServer Cloud's XStream aliases don't include
+#    JDBCUserGroupServiceConfig, causing a ClassCastException on Security page
+#    load. Delete the files so GeoServer stops trying to load the service.
+#    IDIR users are tracked in gssec.user_display_names (populated by the
+#    proxy) and role assignment is done via DBeaver SQL on gssec.user_roles.
 # ---------------------------------------------------------------------------
+echo "Removing broken idir user/group service files (if present)..."
+for f in config.xml usersdddl.xml usersdml.xml; do
+  code="$(gs_curl -o /dev/null -w '%{http_code}' -X DELETE \
+    "${GS}/rest/resource/security/usergroup/idir/${f}" 2>/dev/null || echo 000)"
+  case "${code}" in
+    2*|404) echo "  ${f}: ${code}" ;;
+    *)      echo "  WARNING: DELETE ${f} returned ${code} (non-fatal)" ;;
+  esac
+done
+echo "Reloading GeoServer after cleanup..."
+gs_curl -X POST "${GS}/rest/reload" -w '  reload -> HTTP %{http_code}\n' || true
+
 echo "Wiring headerAuth into filter chains..."
 gs_curl "${GS}/rest/resource/security/config.xml" -o "${TMP}/config.xml"
+echo "  Downloaded config.xml ($(wc -c < "${TMP}/config.xml") bytes)"
+
 if grep -q "<filter>headerAuth</filter>" "${TMP}/config.xml"; then
   echo "  headerAuth already present in filter chains, skipping."
 else
-  sed -i 's#\(<filters name="web" [^>]*>\)#\1<filter>headerAuth</filter>#'     "${TMP}/config.xml"
-  sed -i 's#\(<filters name="default" [^>]*>\)#\1<filter>headerAuth</filter>#' "${TMP}/config.xml"
-  sed -i 's#\(<filters name="gwc" [^>]*>\)#\1<filter>headerAuth</filter>#'     "${TMP}/config.xml"
-  gs_curl -X PUT -H "Content-Type: application/xml" --data-binary @"${TMP}/config.xml" \
-    "${GS}/rest/resource/security/config.xml" -w '  config.xml chains -> HTTP %{http_code}\n'
+  # GNU sed -z: reads the whole file as one record (null-delimited) so the
+  # [^>]* pattern crosses newlines and matches multi-line <filters ...> tags.
+  # Available in Git for Windows (GNU sed 4.x) and all Linux distros.
+  for chain in web default gwc; do
+    sed -zi "s|<filters name=\"${chain}\" \([^>]*\)>|<filters name=\"${chain}\" \1><filter>headerAuth</filter>|" "${TMP}/config.xml"
+  done
+
+  if grep -q "<filter>headerAuth</filter>" "${TMP}/config.xml"; then
+    echo "  Injected headerAuth into web/default/gwc chains."
+    gs_curl -X PUT -H "Content-Type: application/xml" --data-binary @"${TMP}/config.xml" \
+      "${GS}/rest/resource/security/config.xml" -w '  config.xml chains -> HTTP %{http_code}\n'
+  else
+    echo "  ERROR: sed found no matching <filters name=...> elements." >&2
+    grep -n 'filters name' "${TMP}/config.xml" >&2 || echo "  (no 'filters name' found in config.xml)" >&2
+    exit 1
+  fi
 fi
 
 echo "Reloading GeoServer configuration..."
@@ -226,6 +252,13 @@ check() {
 check "/rest/resource/security/role/jdbc/config.xml" "JDBCRoleService" "jdbc role service present"
 check "/rest/security/authfilters.xml"               "headerAuth"      "headerAuth filter present"
 check "/rest/resource/security/config.xml"           "headerAuth"      "headerAuth wired into chains"
+# Confirm idir service was removed (no config.xml should exist).
+if gs_curl "${GS}/rest/resource/security/usergroup/idir/config.xml" 2>/dev/null | grep -q "JDBCUserGroupServiceConfig\|userGroupService"; then
+  echo "  FAIL idir service still present — Security page will error"
+  fail=1
+else
+  echo "  OK   idir service absent (Security page safe)"
+fi
 
 if [ "${fail}" != "0" ]; then
   echo "Security verification FAILED." >&2

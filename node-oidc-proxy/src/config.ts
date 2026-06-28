@@ -86,6 +86,20 @@ export const config = {
 
   /** Convenience redirect target when a browser hits "/". */
   defaultReturnTo: optional('DEFAULT_RETURN_TO', '/geoserver/cloud/web/'),
+
+  /**
+   * Optional pgconfig DB connection for auto-registering users in
+   * gssec.user_display_names on first OIDC login. All fields default to '' so
+   * the app starts cleanly when the DB env vars are absent (the pool is
+   * created lazily and only when host/database/username are all non-empty).
+   */
+  db: {
+    host:     optional('PGCONFIG_HOST',     ''),
+    port:     int('PGCONFIG_PORT',          5432),
+    database: optional('PGCONFIG_DATABASE', ''),
+    username: optional('PGCONFIG_USERNAME', ''),
+    password: optional('PGCONFIG_PASSWORD', ''),
+  },
 } as const;
 
 export type AppConfig = typeof config;

@@ -15,6 +15,7 @@ import {
 } from './session.ts';
 import { beginLogin, completeLogin, refresh, buildLogoutUrl, clearTxCookie } from './oidc.ts';
 import { proxy } from './proxy.ts';
+import { upsertUser } from './db.ts';
 
 /** Refresh when the access token has less than this many seconds left. */
 const REFRESH_SKEW_SECONDS = 30;
@@ -78,6 +79,9 @@ export function createApp(): express.Express {
         refreshToken: result.refreshToken,
         idToken: result.idToken,
       };
+      // Auto-register the user so the admin can see and assign roles.
+      // Fire-and-forget: DB failure must never block the OIDC callback.
+      void upsertUser(result.username, result.displayName);
       writeSessionCookie(res, await sealSession(session));
       clearTxCookie(res);
       res.redirect(302, safePath(result.returnTo, config.defaultReturnTo));

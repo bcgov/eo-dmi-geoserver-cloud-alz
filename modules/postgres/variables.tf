@@ -33,13 +33,13 @@ variable "administrator_login" {
 variable "sku_name" {
   type        = string
   description = "Flexible Server SKU (tier_Name). e.g. B_Standard_B1ms (dev), GP_Standard_D2ds_v5 (prod)."
-  default     = "B_Standard_B1ms"
+  default     = "GP_Standard_D2ds_v5"
 }
 
 variable "storage_mb" {
   type        = number
   description = "Storage in MB."
-  default     = 32768
+  default     = 131072
 }
 
 variable "config_database_name" {

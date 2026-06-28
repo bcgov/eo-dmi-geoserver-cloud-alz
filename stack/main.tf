@@ -711,9 +711,18 @@ resource "azapi_resource" "proxy" {
           { name = "GATEWAY_CONNECT_TIMEOUT_MS", value = "90000" },
           { name = "GATEWAY_READ_TIMEOUT_MS", value = "180000" },
 
+          # pgconfig DB — auto-register users in gssec.user_display_names on first OIDC login
+          # so the GeoServer admin can see who has authenticated and assign roles.
+          # The proxy already has VNet integration and reaches the private PostgreSQL endpoint.
+          { name = "PGCONFIG_HOST",     value = module.postgres.fqdn },
+          { name = "PGCONFIG_PORT",     value = "5432" },
+          { name = "PGCONFIG_DATABASE", value = module.postgres.config_database_name },
+          { name = "PGCONFIG_USERNAME", value = module.postgres.administrator_login },
+
           # KV references — reference strings (not values) in state; resolved at runtime
-          { name = "OIDC_CLIENT_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
+          { name = "OIDC_CLIENT_SECRET",  value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
           { name = "SESSION_COOKIE_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
+          { name = "PGCONFIG_PASSWORD",   value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
         ]
       }
     }
@@ -902,46 +911,89 @@ resource "azurerm_container_app_job" "init_gsroles" {
           psql <<'SQL'
             CREATE SCHEMA IF NOT EXISTS gssec;
 
-            DROP TABLE IF EXISTS gssec.user_roles  CASCADE;
-            DROP TABLE IF EXISTS gssec.group_roles CASCADE;
-            DROP TABLE IF EXISTS gssec.role_props  CASCADE;
-            DROP TABLE IF EXISTS gssec.roles       CASCADE;
-
-            CREATE TABLE gssec.roles (
+            -- Role service tables (JDBCRoleService).
+            -- CREATE TABLE IF NOT EXISTS: preserves existing role assignments across re-runs.
+            -- Earlier versions of this script used DROP+CREATE; that is no longer safe once
+            -- production role data exists. The schema shape has been stable since v2.
+            CREATE TABLE IF NOT EXISTS gssec.roles (
               name   VARCHAR(64) NOT NULL,
               parent VARCHAR(64),
               PRIMARY KEY (name)
             );
 
-            CREATE TABLE gssec.role_props (
+            CREATE TABLE IF NOT EXISTS gssec.role_props (
               rolename  VARCHAR(64)   NOT NULL,
               propname  VARCHAR(64)   NOT NULL,
               propvalue VARCHAR(2048),
               PRIMARY KEY (rolename, propname)
             );
 
-            CREATE TABLE gssec.user_roles (
+            CREATE TABLE IF NOT EXISTS gssec.user_roles (
               username VARCHAR(128) NOT NULL,
               rolename VARCHAR(64)  NOT NULL,
               PRIMARY KEY (username, rolename)
             );
-            CREATE INDEX user_roles_idx ON gssec.user_roles (rolename, username);
+            CREATE INDEX IF NOT EXISTS user_roles_idx ON gssec.user_roles (rolename, username);
 
-            CREATE TABLE gssec.group_roles (
+            CREATE TABLE IF NOT EXISTS gssec.group_roles (
               groupname VARCHAR(128) NOT NULL,
               rolename  VARCHAR(64)  NOT NULL,
               PRIMARY KEY (groupname, rolename)
             );
-            CREATE INDEX group_roles_idx ON gssec.group_roles (rolename, groupname);
+            CREATE INDEX IF NOT EXISTS group_roles_idx ON gssec.group_roles (rolename, groupname);
 
-            -- GUID -> friendly name (for the GeoServer UI; populated as users log in).
+            -- GUID -> friendly name (populated by Node OIDC proxy on each login).
             CREATE TABLE IF NOT EXISTS gssec.user_display_names (
               idir_user_guid VARCHAR(128) NOT NULL PRIMARY KEY,
               display_name   VARCHAR(255) NOT NULL
             );
 
-            -- Seed the well-known GeoServer roles. ROLE_ADMINISTRATOR is the admin
-            -- role the role service maps to (adminRoleName in role-service config.xml).
+            -- JDBC user/group service tables (JDBCUserGroupService).
+            -- Backed by user_display_names via trigger; exposes IDIR users in
+            -- the GeoServer Security > Users/Groups UI so admin can assign roles.
+            CREATE TABLE IF NOT EXISTS gssec.us_users (
+              name     VARCHAR(128) NOT NULL PRIMARY KEY,
+              password VARCHAR(254),
+              enabled  BOOLEAN NOT NULL DEFAULT TRUE
+            );
+            CREATE TABLE IF NOT EXISTS gssec.us_userprops (
+              username  VARCHAR(128) NOT NULL,
+              propname  VARCHAR(64)  NOT NULL,
+              propvalue VARCHAR(2048),
+              PRIMARY KEY (username, propname)
+            );
+            CREATE TABLE IF NOT EXISTS gssec.us_groups (
+              name    VARCHAR(128) NOT NULL PRIMARY KEY,
+              enabled BOOLEAN NOT NULL DEFAULT TRUE
+            );
+            CREATE TABLE IF NOT EXISTS gssec.us_groupmembers (
+              username  VARCHAR(128) NOT NULL,
+              groupname VARCHAR(128) NOT NULL,
+              PRIMARY KEY (username, groupname)
+            );
+
+            -- Trigger: keep us_users in sync when proxy writes to user_display_names.
+            CREATE OR REPLACE FUNCTION gssec.sync_idir_user() RETURNS TRIGGER AS $$
+            BEGIN
+              INSERT INTO gssec.us_users (name, password, enabled)
+              VALUES (NEW.idir_user_guid, 'EXTERNAL_OIDC_NO_PASSWORD', TRUE)
+              ON CONFLICT (name) DO UPDATE SET enabled = TRUE;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trg_sync_idir_user ON gssec.user_display_names;
+            CREATE TRIGGER trg_sync_idir_user
+              AFTER INSERT OR UPDATE ON gssec.user_display_names
+              FOR EACH ROW EXECUTE FUNCTION gssec.sync_idir_user();
+
+            -- Backfill any users that logged in before this trigger existed.
+            INSERT INTO gssec.us_users (name, password, enabled)
+            SELECT idir_user_guid, 'EXTERNAL_OIDC_NO_PASSWORD', TRUE
+            FROM gssec.user_display_names
+            ON CONFLICT (name) DO NOTHING;
+
+            -- Seed well-known GeoServer roles.
             INSERT INTO gssec.roles(name) VALUES ('ROLE_ADMINISTRATOR') ON CONFLICT DO NOTHING;
             INSERT INTO gssec.roles(name) VALUES ('ROLE_GROUP_ADMIN')   ON CONFLICT DO NOTHING;
             INSERT INTO gssec.roles(name) VALUES ('ROLE_AUTHENTICATED') ON CONFLICT DO NOTHING;
@@ -966,7 +1018,7 @@ resource "null_resource" "run_gsroles_init" {
     server_id = module.postgres.id
     # Bump when the gssec schema definition changes so the job re-runs (the job's
     # resource ID is stable across in-place command edits, so it alone won't retrigger).
-    schema_version = "v2-geoserver-compatible"
+    schema_version = "v3-with-usergroup"
   }
 
   provisioner "local-exec" {
