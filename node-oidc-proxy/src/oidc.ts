@@ -5,12 +5,18 @@
  * and cached. The login → callback round-trip is itself stateless: the PKCE
  * verifier, state and nonce are sealed into a short-lived transaction cookie
  * rather than a server-side store.
+ *
+ * DEBUG: this module logs the discovered endpoints at boot, the authorize
+ * request, and — most importantly — the ID-token claim set at callback. If the
+ * principal claim (config.usernameClaim, e.g. `email`) is absent, that single
+ * `oidc:principal-claim-missing` line names the exact problem.
  */
 import * as client from 'openid-client';
 import type { Request, Response } from 'express';
 import { config } from './config.ts';
 import { logger } from './logger.ts';
 import { seal, open } from './jwe.ts';
+import { getReqId } from './debug.ts';
 
 const TX_COOKIE = `${config.session.cookieName}_tx`;
 const TX_TTL = '600s'; // login transactions are short-lived
@@ -24,7 +30,26 @@ export async function initOidc(): Promise<void> {
     config.oidc.clientId,
     config.oidc.clientSecret,
   );
-  logger.info({ issuer: config.oidc.issuer }, 'OIDC discovery complete');
+  // Log the resolved endpoints — confirms the issuer is reachable and that the
+  // authorize / token / end-session / jwks URLs are what we expect.
+  try {
+    const md = (
+      configuration as unknown as { serverMetadata?: () => Record<string, unknown> }
+    ).serverMetadata?.();
+    logger.info(
+      {
+        ev: 'oidc:discovery',
+        issuer: config.oidc.issuer,
+        authorization_endpoint: md?.authorization_endpoint ?? null,
+        token_endpoint: md?.token_endpoint ?? null,
+        end_session_endpoint: md?.end_session_endpoint ?? null,
+        jwks_uri: md?.jwks_uri ?? null,
+      },
+      'OIDC discovery complete',
+    );
+  } catch {
+    logger.info({ ev: 'oidc:discovery', issuer: config.oidc.issuer }, 'OIDC discovery complete');
+  }
 }
 
 function getConfig(): client.Configuration {
@@ -36,8 +61,8 @@ function getConfig(): client.Configuration {
 
 /**
  * Extract an optional, non-empty string claim. Used for presentation-only
- * claims (e.g. display_name) where absence is tolerated — unlike the identity
- * claim, a missing value must NOT fail the login.
+ * claims (display_name, idir_user_guid) where absence is tolerated — unlike the
+ * identity claim, a missing value must NOT fail the login.
  */
 function optionalStringClaim(
   claims: client.IDToken | undefined,
@@ -45,6 +70,29 @@ function optionalStringClaim(
 ): string | undefined {
   const value = claims?.[name];
   return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * Read the principal (sec-username) claim. This is the GeoServer identity that
+ * roles are keyed on. Optionally lower-cased so a user can't end up registered
+ * twice under different casing (email vs. UPN).
+ */
+function principalFromClaims(claims: client.IDToken): string {
+  const raw = claims[config.usernameClaim];
+  if (typeof raw !== 'string' || raw === '') {
+    // Name exactly which claim is missing and what DID arrive — the fastest way
+    // to spot a missing protocol mapper (e.g. `email` not on the ID token).
+    logger.error(
+      {
+        ev: 'oidc:principal-claim-missing',
+        usernameClaim: config.usernameClaim,
+        claimNames: Object.keys(claims),
+      },
+      `ID token is missing the principal claim "${config.usernameClaim}"`,
+    );
+    throw new Error(`ID token missing string claim "${config.usernameClaim}"`);
+  }
+  return config.usernameLowercase ? raw.toLowerCase() : raw;
 }
 
 interface LoginTx {
@@ -82,12 +130,26 @@ export async function beginLogin(
     state,
     nonce,
   });
+
+  logger.debug(
+    {
+      ev: 'oidc:authorize-url',
+      redirect_uri: config.oidc.redirectUri,
+      scope: config.oidc.scopes,
+      code_challenge_method: 'S256',
+      txCookieBytes: txToken.length,
+    },
+    'built Keycloak authorization URL',
+  );
   return url.href;
 }
 
 export interface CallbackResult {
   sub: string;
+  /** Principal injected as sec-username (e.g. lower-cased email). */
   username: string;
+  /** Stable IDIR GUID (idir_user_guid claim) — kept for audit/reference. */
+  guid?: string;
   /** Human-readable display name (display_name claim), if present. */
   displayName?: string;
   accessExp: number;
@@ -102,8 +164,12 @@ export interface CallbackResult {
  * nonce) and state. Returns the data needed to build a session.
  */
 export async function completeLogin(req: Request): Promise<CallbackResult> {
+  const reqId = getReqId(req);
   const txRaw = readTxCookie(req);
-  if (!txRaw) throw new Error('missing login transaction cookie');
+  if (!txRaw) {
+    logger.error({ reqId, ev: 'oidc:tx-cookie-missing' }, 'login transaction cookie absent at callback');
+    throw new Error('missing login transaction cookie');
+  }
 
   const payload = await open(txRaw);
   const tx = payload as unknown as LoginTx;
@@ -116,6 +182,11 @@ export async function completeLogin(req: Request): Promise<CallbackResult> {
   const currentUrl = new URL(config.oidc.redirectUri);
   currentUrl.search = new URL(req.originalUrl, config.publicOrigin).search;
 
+  logger.debug(
+    { reqId, ev: 'oidc:code-exchange', callbackUrl: `${currentUrl.origin}${currentUrl.pathname}` },
+    'exchanging authorization code for tokens',
+  );
+
   const tokens = await client.authorizationCodeGrant(getConfig(), currentUrl, {
     pkceCodeVerifier: tx.codeVerifier,
     expectedState: tx.state,
@@ -126,10 +197,29 @@ export async function completeLogin(req: Request): Promise<CallbackResult> {
   const claims = tokens.claims();
   if (!claims) throw new Error('token response had no ID token claims');
 
-  const username = claims[config.usernameClaim];
-  if (typeof username !== 'string' || username === '') {
-    throw new Error(`ID token missing string claim "${config.usernameClaim}"`);
-  }
+  // GOLD LINE: the full claim-name set + whether each claim we depend on is
+  // present. If `usernameClaim` (email) isn't here, principalFromClaims throws
+  // next and the callback fails — this tells you why before that happens.
+  logger.info(
+    {
+      reqId,
+      ev: 'oidc:callback-claims',
+      claimNames: Object.keys(claims),
+      usernameClaim: config.usernameClaim,
+      hasUsernameClaim: typeof claims[config.usernameClaim] === 'string',
+      hasGuidClaim: !!optionalStringClaim(claims, config.userGuidClaim),
+      hasDisplayNameClaim: !!optionalStringClaim(claims, config.displayNameClaim),
+      sub: String(claims.sub),
+      iss: claims.iss ?? null,
+      aud: claims.aud ?? null,
+      exp: claims.exp ?? null,
+      hasRefreshToken: !!tokens.refresh_token,
+      hasIdToken: !!tokens.id_token,
+    },
+    'oidc:callback-claims — ID token validated',
+  );
+
+  const username = principalFromClaims(claims);
   if (!tokens.refresh_token) {
     throw new Error('token response had no refresh_token');
   }
@@ -137,6 +227,7 @@ export async function completeLogin(req: Request): Promise<CallbackResult> {
   return {
     sub: String(claims.sub),
     username,
+    guid: optionalStringClaim(claims, config.userGuidClaim),
     displayName: optionalStringClaim(claims, config.displayNameClaim),
     accessExp: accessExpiry(tokens, claims),
     refreshToken: tokens.refresh_token,
@@ -147,6 +238,7 @@ export async function completeLogin(req: Request): Promise<CallbackResult> {
 
 export interface RefreshResult {
   username: string;
+  guid?: string;
   /** Human-readable display name (display_name claim), if present. */
   displayName?: string;
   sub: string;
@@ -162,12 +254,25 @@ export async function refresh(refreshToken: string): Promise<RefreshResult> {
 
   const username =
     claims && typeof claims[config.usernameClaim] === 'string'
-      ? (claims[config.usernameClaim] as string)
+      ? (config.usernameLowercase
+          ? (claims[config.usernameClaim] as string).toLowerCase()
+          : (claims[config.usernameClaim] as string))
       : undefined;
+
+  logger.debug(
+    {
+      ev: 'oidc:refresh',
+      hasUsernameClaim: !!username,
+      rotatedRefreshToken: !!tokens.refresh_token,
+      accessExp: accessExpiry(tokens, claims),
+    },
+    'refresh token grant complete',
+  );
 
   return {
     sub: claims ? String(claims.sub) : '',
     username: username ?? '',
+    guid: optionalStringClaim(claims, config.userGuidClaim),
     displayName: optionalStringClaim(claims, config.displayNameClaim),
     accessExp: accessExpiry(tokens, claims),
     // Keycloak rotates refresh tokens; fall back to the old one if not returned.

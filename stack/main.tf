@@ -690,11 +690,13 @@ resource "azapi_resource" "proxy" {
           # Proxy configuration
           { name = "GATEWAY_ORIGIN", value = local.gateway_internal },
           { name = "PUBLIC_ORIGIN", value = local.proxy_origin },
-          { name = "IDENTITY_HEADER", value = "sec-username" },
-          # USERNAME_CLAIM: extract idir_user_guid from Keycloak token and inject as sec-username.
-          # IDIR GUID is stable per user (survives account name changes, email updates).
-          # GeoServer JDBC role service looks up roles in gssec.user_roles by this GUID.
-          { name = "USERNAME_CLAIM", value = "idir_user_guid" },
+          { name = "GS_IDENTITY_HEADER", value = "sec-username" },
+          # Principal injected as sec-username. `email` (lower-cased) so GeoServer's UI
+          # shows an identifiable username; the default XML role service keys roles on it.
+          # The stable IDIR GUID is captured separately (USER_GUID_CLAIM) for audit/reference.
+          { name = "USERNAME_CLAIM", value = "email" },
+          { name = "USERNAME_LOWERCASE", value = "true" },
+          { name = "USER_GUID_CLAIM", value = "idir_user_guid" },
           # DISPLAY_NAME_*: extract display_name from token and inject as sec-user-display-name header.
           # GeoServer UI uses this for human-readable display instead of the GUID.
           { name = "DISPLAY_NAME_HEADER", value = "sec-user-display-name" },
@@ -703,6 +705,8 @@ resource "azapi_resource" "proxy" {
           { name = "SESSION_COOKIE_NAME", value = "gs_sso" },
           { name = "SESSION_MAX_AGE_SECONDS", value = "43200" },
           { name = "LOG_LEVEL", value = "info" },
+          { name = "DEBUG_HEADERS", value = "false" },
+          { name = "DEBUG_UNSAFE_HEADERS", value = "false" },
           # Upstream timeouts. The proxy's "connect" timer actually fires if no
           # RESPONSE arrives in time (it is cleared on first response byte), so it
           # must cover a scale-to-zero OWS backend cold-start (wms/wfs/wcs/gwc/rest
@@ -720,9 +724,17 @@ resource "azapi_resource" "proxy" {
           { name = "PGCONFIG_USERNAME", value = module.postgres.administrator_login },
 
           # KV references — reference strings (not values) in state; resolved at runtime
-          { name = "OIDC_CLIENT_SECRET",  value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
-          { name = "SESSION_COOKIE_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
-          { name = "PGCONFIG_PASSWORD",   value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
+          { name = "OIDC_CLIENT_SECRET",      value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
+          { name = "SESSION_COOKIE_SECRET",   value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
+          { name = "PGCONFIG_PASSWORD",       value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
+          # GeoServer admin REST — registers each IDIR user in the default user/group
+          # service so they appear under Security → Users/Groups in the GeoServer UI.
+          # Reuses the same secret as the GeoServer environment-admin-auth profile.
+          { name = "GEOSERVER_ADMIN_USERNAME", value = "admin" },
+          { name = "GEOSERVER_BASE_PATH", value = "/geoserver/cloud" },
+          { name = "GEOSERVER_ADMIN_PASSWORD", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=geoserver-admin-password)" },
+          # Emails allowed to view the proxy's /admin/idir-users reference page (name <-> email <-> GUID).
+          { name = "GEOSERVER_ADMIN_PRINCIPALS", value = var.admin_idir_principal },
         ]
       }
     }
@@ -942,11 +954,15 @@ resource "azurerm_container_app_job" "init_gsroles" {
             );
             CREATE INDEX IF NOT EXISTS group_roles_idx ON gssec.group_roles (rolename, groupname);
 
-            -- GUID -> friendly name (populated by Node OIDC proxy on each login).
+            -- GUID -> email + friendly name (populated by the Node OIDC proxy on each login).
+            -- Keyed on the immutable IDIR GUID; email is the GeoServer principal (can change).
             CREATE TABLE IF NOT EXISTS gssec.user_display_names (
               idir_user_guid VARCHAR(128) NOT NULL PRIMARY KEY,
+              email          VARCHAR(255),
               display_name   VARCHAR(255) NOT NULL
             );
+            -- Add email for tables created before this column existed.
+            ALTER TABLE gssec.user_display_names ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 
             -- JDBC user/group service tables (JDBCUserGroupService).
             -- Backed by user_display_names via trigger; exposes IDIR users in
@@ -1018,7 +1034,7 @@ resource "null_resource" "run_gsroles_init" {
     server_id = module.postgres.id
     # Bump when the gssec schema definition changes so the job re-runs (the job's
     # resource ID is stable across in-place command edits, so it alone won't retrigger).
-    schema_version = "v3-with-usergroup"
+    schema_version = "v4-email-principal"
   }
 
   provisioner "local-exec" {
@@ -1089,12 +1105,10 @@ resource "null_resource" "configure_geoserver_security" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     environment = {
-      KV_NAME     = var.key_vault_name
-      GATEWAY_URL = local.gateway_internal
+      KV_NAME         = var.key_vault_name
+      GATEWAY_URL     = local.gateway_internal
+      ADMIN_PRINCIPAL = var.admin_idir_principal
     }
-    # The logic lives in a standalone, syntax-checkable script (bash -n) rather
-    # than an inline heredoc — inline Terraform-heredoc-inside-bash escaping
-    # (%%{...}, $${...}, nested heredocs) is error-prone and cannot be linted.
     command = "bash '${path.module}/../scripts/configure-geoserver-security.sh'"
   }
 

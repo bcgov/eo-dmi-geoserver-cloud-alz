@@ -7,7 +7,65 @@ import { logger } from './logger.ts';
 import { initOidc } from './oidc.ts';
 import { createApp } from './app.ts';
 
+/**
+ * Dump the EFFECTIVE (non-secret) configuration at boot. This is the single
+ * fastest way to catch a misconfiguration — e.g. the principal claim is `email`
+ * but the identity header is mis-named, the gateway origin is wrong, or the DB /
+ * GeoServer-admin features are silently disabled because an env var is blank.
+ */
+function logEffectiveConfig(): void {
+  logger.info(
+    {
+      ev: 'boot:config',
+      port: config.port,
+      logLevel: config.logLevel,
+      debug: config.debug,
+      oidc: {
+        issuer: config.oidc.issuer,
+        clientId: config.oidc.clientId,
+        redirectUri: config.oidc.redirectUri,
+        postLogoutRedirectUri: config.oidc.postLogoutRedirectUri || null,
+        scopes: config.oidc.scopes,
+        clientSecretSet: config.oidc.clientSecret.length > 0,
+      },
+      identity: {
+        identityHeader: config.identityHeader,
+        usernameClaim: config.usernameClaim,
+        usernameLowercase: config.usernameLowercase,
+        userGuidClaim: config.userGuidClaim,
+        displayNameHeader: config.displayNameHeader,
+        displayNameClaim: config.displayNameClaim,
+      },
+      gateway: {
+        origin: config.gateway.origin,
+        tlsInsecure: config.gateway.tlsInsecure,
+        connectTimeoutMs: config.gateway.connectTimeoutMs,
+        readTimeoutMs: config.gateway.readTimeoutMs,
+      },
+      publicOrigin: config.publicOrigin,
+      session: {
+        cookieName: config.session.cookieName,
+        maxAgeSeconds: config.session.maxAgeSeconds,
+        secretSet: config.session.secret.length > 0,
+      },
+      machineAuthPassthrough: config.machineAuthPassthrough,
+      defaultReturnTo: config.defaultReturnTo,
+      dbConfigured: !!(config.db.host && config.db.database && config.db.username && config.db.password),
+      geoserverAdminConfigured: !!config.geoserver.adminPassword,
+      geoserver: {
+        adminUser: config.geoserver.adminUser,
+        basePath: config.geoserver.basePath,
+        serviceName: config.geoserver.serviceName,
+      },
+      adminPrincipals: config.adminPrincipals,
+    },
+    'boot:config — effective configuration',
+  );
+}
+
 async function main(): Promise<void> {
+  logEffectiveConfig();
+
   await initOidc();
 
   const app = createApp();

@@ -3,7 +3,7 @@
 
 provider "registry.terraform.io/azure/azapi" {
   version     = "2.10.0"
-  constraints = "~> 2.0, ~> 2.4"
+  constraints = ">= 2.0.0, ~> 2.0, ~> 2.4"
   hashes = [
     "h1:VMEPYNpMeets2y6F8OIBPRI2xqg6/4w8OABcSvKKr+M=",
     "zh:1e6513c791c6be1389fc4acb8ffdd5127dbf0f479bd0c0074d3a5b69edee2faa",
@@ -43,7 +43,7 @@ provider "registry.terraform.io/azure/modtm" {
 
 provider "registry.terraform.io/hashicorp/azurerm" {
   version     = "4.79.0"
-  constraints = ">= 4.0.0, ~> 4.38, < 5.0.0"
+  constraints = ">= 4.0.0, ~> 4.38, ~> 4.79, < 5.0.0"
   hashes = [
     "h1:cUi3hF73oPA3NekAciGfUNtjrTfXzfQGKZS6zhQH+Ss=",
     "zh:0129b3fa33289d54f86f150377b19127f85787116b7cc53564fed77c2e2468be",

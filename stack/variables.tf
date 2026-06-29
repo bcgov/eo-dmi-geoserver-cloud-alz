@@ -144,7 +144,7 @@ variable "postgres_version" {
 variable "postgres_sku_name" {
   type        = string
   description = "PostgreSQL Flexible Server SKU."
-  default     = "B_Standard_B1ms"
+  default     = "GP_Standard_D2ds_v5"
 }
 
 variable "postgres_enable_high_availability" {
@@ -215,7 +215,7 @@ variable "acl_version" {
 variable "rabbitmq_image_tag" {
   type        = string
   description = "RabbitMQ image tag (with management plugin)."
-  default     = "3-management"
+  default     = "4-management-alpine"
 }
 
 variable "rabbitmq_user" {
@@ -265,6 +265,12 @@ variable "oidc_issuer" {
 variable "oidc_client_id" {
   type        = string
   description = "Keycloak client ID for the OIDC proxy."
+}
+
+variable "admin_idir_principal" {
+  type        = string
+  description = "IDIR principal (lower-cased email) bootstrapped as the GeoServer super admin and allowed to view /admin/idir-users."
+  default     = "omprakash.2.mishra@gov.bc.ca"
 }
 
 # ---------------------------------------------------------------------------

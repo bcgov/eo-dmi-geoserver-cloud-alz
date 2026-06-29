@@ -78,12 +78,6 @@ resource "azurerm_container_app" "rabbitmq" {
     min_replicas = var.min_replicas
     max_replicas = 1
 
-    # Persistent broker data dir (Mnesia/Khepri DB, definitions, durable messages).
-    volume {
-      name         = "rabbitmq-data"
-      storage_type = "AzureFile"
-      storage_name = azurerm_container_app_environment_storage.rabbitmq_data.name
-    }
 
     container {
       name   = "rabbitmq"
@@ -91,23 +85,6 @@ resource "azurerm_container_app" "rabbitmq" {
       cpu    = var.cpu
       memory = var.memory
 
-      # Mount the durable share at the MNESIA dir, NOT at /var/lib/rabbitmq.
-      #
-      # Why the subdir: /var/lib/rabbitmq is the rabbitmq user's $HOME, where Erlang
-      # keeps `.erlang.cookie`. Erlang requires that file to be 0600 (owner-only) or
-      # the broker aborts at prelaunch:
-      #   "Cookie file /var/lib/rabbitmq/.erlang.cookie must be accessible by owner only"
-      #   -> Kernel pid terminated (application_controller) ... crash loop.
-      # Azure File (SMB) mounts every file 0777 and IGNORES chmod, so mounting the
-      # share at $HOME makes the cookie un-fixable and RabbitMQ never starts (that
-      # crash loop manifested upstream as "404 NOT_FOUND no queue ... in vhost '/'"
-      # on every GeoServer service and intermittent OWS 500s).
-      # Mounting only the Mnesia data dir keeps durability while leaving the cookie
-      # on the container's local fs where 0600 holds.
-      volume_mounts {
-        name = "rabbitmq-data"
-        path = "/var/lib/rabbitmq/mnesia"
-      }
 
       # Stable node name → stable Mnesia dir (/var/lib/rabbitmq/mnesia/rabbit@localhost,
       # which is on the mounted share) so persisted state is reused across restarts
