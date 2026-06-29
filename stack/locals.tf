@@ -59,15 +59,15 @@ locals {
     }
     # webui: sticky sessions required for Wicket page state; min 1 so the OIDC
     # proxy's sec-username header always lands on a warm replica.
-    webui = { repo = "geoserver-cloud-webui", port = 8080, external = false, sticky = true, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
-    wms   = { repo = "geoserver-cloud-wms", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 4, cpu = 0.5, memory = "1Gi", extra_env = {} }
-    wfs   = { repo = "geoserver-cloud-wfs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 0.5, memory = "1Gi", extra_env = {} }
-    wcs   = { repo = "geoserver-cloud-wcs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    webui = { repo = "geoserver-cloud-webui", port = 8080, external = false, sticky = true, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = {} }
+    wms   = { repo = "geoserver-cloud-wms", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 4, cpu = 2, memory = "4Gi", extra_env = {} }
+    wfs   = { repo = "geoserver-cloud-wfs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 2, memory = "4Gi", extra_env = {} }
+    wcs   = { repo = "geoserver-cloud-wcs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = {} }
     # wps: ACL profile excluded (WPS service does not use data-layer ACL).
     # environment-admin-auth kept so admin credentials are consistent across services.
-    wps  = { repo = "geoserver-cloud-wps", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig,environment-admin-auth" } }
-    rest = { repo = "geoserver-cloud-rest", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 0.5, memory = "1Gi", extra_env = {} }
-    gwc  = { repo = "geoserver-cloud-gwc", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 0.5, memory = "1Gi", extra_env = {} }
+    wps  = { repo = "geoserver-cloud-wps", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig,environment-admin-auth" } }
+    rest = { repo = "geoserver-cloud-rest", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = {} }
+    gwc  = { repo = "geoserver-cloud-gwc", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 2, memory = "4Gi", extra_env = {} }
   }
 
   # Derived values used by the App Service resource (stack/main.tf).
