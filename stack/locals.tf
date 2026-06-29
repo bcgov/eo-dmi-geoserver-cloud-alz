@@ -35,8 +35,8 @@ locals {
       # gateway. Keep it warm.
       min_replicas = 1
       max_replicas = 3
-      cpu          = 1.0
-      memory       = "2Gi"
+      cpu          = 2.0
+      memory       = "4Gi"
       extra_env = {
         GEOSERVER_BASE_PATH                                         = "/geoserver/cloud"
         SPRING_CLOUD_GATEWAY_HTTPCLIENT_SSL_USEINSECURETRUSTMANAGER = "true"
