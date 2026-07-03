@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1
 
+# Node version is pinned in mise.toml ([tools].node) at the repo root.
+# CI passes --build-arg NODE_VERSION=$(mise current node) when building.
+ARG NODE_VERSION=24
+
 # ---- build stage --------------------------------------------------------
-FROM node:24-alpine AS build
+FROM node:${NODE_VERSION}-alpine AS build
 WORKDIR /app
 # Install all deps (incl. dev) against the committed lockfile for a
 # reproducible build, then compile TypeScript → dist/.
@@ -12,7 +16,7 @@ COPY src ./src
 RUN npm run build
 
 # ---- runtime stage ------------------------------------------------------
-FROM node:24-alpine AS runtime
+FROM node:${NODE_VERSION}-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 

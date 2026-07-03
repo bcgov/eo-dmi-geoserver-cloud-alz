@@ -63,6 +63,30 @@ variable "secret_env" {
   default     = []
 }
 
+variable "config_mount_enabled" {
+  type        = bool
+  description = "Mount the deployment-config bundle into the container."
+  default     = false
+}
+
+variable "config_mount_path" {
+  type        = string
+  description = "Mount path for the deployment-config bundle inside the container."
+  default     = "/etc/gscloud/deployment-config"
+}
+
+variable "config_volume_name" {
+  type        = string
+  description = "Name of the volume used to mount the deployment-config bundle."
+  default     = "deployment-config"
+}
+
+variable "config_storage_name" {
+  type        = string
+  description = "Name of the Azure File-backed Container Apps environment storage resource."
+  default     = ""
+}
+
 variable "external_ingress" {
   type        = bool
   description = "Expose on the environment's internal load balancer (true for the gateway only)."

@@ -1,0 +1,28 @@
+# GeoServer's database documentation describes JNDI-based connections as a
+# production-friendly way to externalize datasource configuration. This file
+# keeps those datasource definitions in a separate mounted bundle.
+jndi:
+  datasources:
+    postgis:
+      enabled: ${JNDI_POSTGIS_ENABLED:false}
+      wait-for-it: true
+      wait-timeout: 10
+      url: ${JNDI_POSTGIS_URL:jdbc:postgresql://geodatabase:5432/postgis}
+      username: ${JNDI_POSTGIS_USERNAME:geoserver}
+      password: ${JNDI_POSTGIS_PASSWORD:geoserver}
+      maximum-pool-size: ${JNDI_POSTGIS_MAXIMUM_POOL_SIZE:10}
+      minimum-idle: ${JNDI_POSTGIS_MINIMUM_IDLE:2}
+      connection-timeout: ${JNDI_POSTGIS_CONNECTION_TIMEOUT:500}
+      idle-timeout: ${JNDI_POSTGIS_IDLE_TIMEOUT:60000}
+    pgconfig:
+      enabled: ${JNDI_PGCONFIG_ENABLED:false}
+      schema: ${PGCONFIG_SCHEMA:pgconfig}
+      wait-for-it: true
+      wait-timeout: 10
+      url: ${PGCONFIG_URL:jdbc:postgresql://${PGCONFIG_HOST:geodatabase}:${PGCONFIG_PORT:5432}/${PGCONFIG_DATABASE:geoserver}}
+      username: ${PGCONFIG_USERNAME:geoserver}
+      password: ${PGCONFIG_PASSWORD:geoserver}
+      maximum-pool-size: ${PGCONFIG_MAX_CONNECTIONS:10}
+      minimum-idle: ${PGCONFIG_MIN_CONNECTIONS:0}
+      connection-timeout: ${PGCONFIG_CONNECTION_TIMEOUT:2500}
+      idle-timeout: ${PGCONFIG_IDLE_TIMEOUT:30000}

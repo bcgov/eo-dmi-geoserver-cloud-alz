@@ -2,8 +2,11 @@
 #
 # Contract:
 #   inputs.environment  dev | test | prod  (selects the gated GitHub Environment)
-#   inputs.tf_version    Terraform version to use
 #   inputs.apply         when true, runs the gated apply job after plan
+#
+# Tool versions (Terraform, Python, TFLint, Checkov, uv) are pinned in
+# mise.toml at the repo root. jdx/mise-action installs them in every job
+# from that single source of truth — do not add per-step version pins here.
 #
 # All environments share the single stack/ directory. Environment-specific
 # values are injected via GitHub Environment Variables (vars.*) mapped to
@@ -42,11 +45,6 @@ on:
         description: Target environment (dev, test, prod).
         type: string
         required: true
-      tf_version:
-        description: Terraform version.
-        type: string
-        required: false
-        default: "1.15.7"
       apply:
         description: Apply after plan (gated by the GitHub Environment).
         type: boolean
@@ -91,6 +89,7 @@ jobs:
   # Static gates — no cloud credentials required.
   checks:
     name: fmt / validate / tflint / checkov
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Static gates: no cloud auth, no PR writes — read the code and nothing else.
@@ -100,10 +99,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      # Installs terraform, python, tflint, uv from mise.toml; also exports
+      # CHECKOV_VERSION from mise.toml [env] into subsequent step environments.
+      - name: Install tools (mise)
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          terraform_version: ${{ inputs.tf_version }}
+          install_args: terraform python tflint uv
 
       - name: terraform fmt
         run: terraform fmt -check -recursive
@@ -114,11 +115,6 @@ jobs:
           terraform -chdir=stack init -backend=false -input=false
           terraform -chdir=stack validate
 
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
-        with:
-          tflint_version: v0.63.1
-
       - name: tflint
         env:
           # Authenticated plugin download avoids anonymous GitHub API rate limits.
@@ -128,24 +124,24 @@ jobs:
           tflint --init
           tflint --recursive
 
-      - name: Setup Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.13"
-
       - name: Checkov (fail on HIGH/CRITICAL)
-        env:
-          # Pin Checkov so a new release can't shift findings mid-pipeline; bump deliberately.
-          CHECKOV_VERSION: "3.3.2"
         run: |
           set -euo pipefail
+          # CHECKOV_VERSION is exported from mise.toml [env] by the mise step above.
           pip install --quiet "checkov==${CHECKOV_VERSION}"
           checkov --directory . --quiet --compact --hard-fail-on HIGH,CRITICAL
+
+      - name: Validate GeoServer catalog
+        run: |
+          set -euo pipefail
+          pip install --quiet -e geo-server-app-config/
+          geoserver-apply validate --catalog-dir geo-server-app-config/catalog
 
   # -------------------------------------------------------------------- plan
   plan:
     name: terraform plan
     needs: checks
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # id-token for OIDC login. The plan is published via $GITHUB_STEP_SUMMARY,
@@ -157,11 +153,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - name: Install tools (mise)
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          terraform_version: ${{ inputs.tf_version }}
-          terraform_wrapper: false
+          install_args: terraform
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
@@ -199,6 +194,7 @@ jobs:
     name: terraform apply
     needs: plan
     if: ${{ inputs.apply }}
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Gated by the GitHub Environment (configure required reviewers in repo settings).
@@ -211,11 +207,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - name: Install tools (mise)
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
         with:
-          terraform_version: ${{ inputs.tf_version }}
-          terraform_wrapper: false
+          install_args: terraform python uv
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
@@ -235,3 +230,23 @@ jobs:
 
       - name: Terraform apply (saved plan)
         run: ./scripts/tf.sh ${{ inputs.environment }} apply
+
+      - name: Install geoserver-config
+        run: pip install --quiet -e "$GITHUB_WORKSPACE/geo-server-app-config"
+
+      - name: GeoServer catalog — dry-run
+        run: |
+          set -euo pipefail
+          geoserver-apply run ${{ inputs.environment }} \
+            --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
+            --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
+            --stack-dir   "$GITHUB_WORKSPACE/stack" \
+            --dry-run
+
+      - name: GeoServer catalog — apply
+        run: |
+          set -euo pipefail
+          geoserver-apply run ${{ inputs.environment }} \
+            --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
+            --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
+            --stack-dir   "$GITHUB_WORKSPACE/stack"

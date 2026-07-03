@@ -57,7 +57,7 @@ function logEffectiveConfig(): void {
         basePath: config.geoserver.basePath,
         serviceName: config.geoserver.serviceName,
       },
-      adminPrincipals: config.adminPrincipals,
+      adminPrincipalCount: config.adminPrincipals.length,
     },
     'boot:config — effective configuration',
   );

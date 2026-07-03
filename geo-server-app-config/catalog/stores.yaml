@@ -1,0 +1,7 @@
+postgis_stores:
+  - workspace: wildlife
+    name: wildlife_postgis
+    connection: default
+    expose_primary_keys: true
+    fetch_size: 1000
+    validate_connections: true

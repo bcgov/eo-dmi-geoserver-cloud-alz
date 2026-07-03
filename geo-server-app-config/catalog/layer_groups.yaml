@@ -1,0 +1,9 @@
+layer_groups:
+  - workspace: wildlife
+    name: wildlife_overview
+    title: Wildlife overview
+    mode: SINGLE
+    layers:
+      - wildlife:veg_comp_poly
+    styles:
+      - basic_polygon

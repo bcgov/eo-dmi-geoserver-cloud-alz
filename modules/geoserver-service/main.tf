@@ -62,6 +62,15 @@ resource "azurerm_container_app" "this" {
     min_replicas = var.min_replicas
     max_replicas = var.max_replicas
 
+    dynamic "volume" {
+      for_each = var.config_mount_enabled ? [1] : []
+      content {
+        name         = var.config_volume_name
+        storage_type = "AzureFile"
+        storage_name = var.config_storage_name
+      }
+    }
+
     container {
       name   = var.name
       image  = var.image
@@ -83,6 +92,14 @@ resource "azurerm_container_app" "this" {
         content {
           name        = env.value.name
           secret_name = env.value.secret_name
+        }
+      }
+
+      dynamic "volume_mounts" {
+        for_each = var.config_mount_enabled ? [1] : []
+        content {
+          name = var.config_volume_name
+          path = var.config_mount_path
         }
       }
     }

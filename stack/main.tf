@@ -458,6 +458,11 @@ module "acl" {
   max_replicas = 1
   tags         = module.naming.common_tags
 
+  config_mount_enabled = true
+  config_mount_path    = "/etc/gscloud/deployment-config"
+  config_volume_name   = "deployment-config"
+  config_storage_name  = azurerm_container_app_environment_storage.deployment_config.name
+
   depends_on = [
     module.registry,
     module.postgres,
@@ -467,6 +472,7 @@ module "acl" {
     null_resource.secret_acl_geoserver_passwords,
     module.rabbitmq,
     null_resource.run_postgis_init,
+    null_resource.publish_deployment_config,
   ]
 }
 
@@ -499,6 +505,11 @@ module "service" {
   max_replicas    = try(each.value.max_replicas, var.service_max_replicas)
   tags            = module.naming.common_tags
 
+  config_mount_enabled = true
+  config_mount_path    = "/etc/gscloud/deployment-config"
+  config_volume_name   = "deployment-config"
+  config_storage_name  = azurerm_container_app_environment_storage.deployment_config.name
+
   depends_on = [
     module.postgres,
     null_resource.secret_acr_password,
@@ -507,6 +518,7 @@ module "service" {
     module.rabbitmq,
     module.acl,
     null_resource.run_postgis_init,
+    null_resource.publish_deployment_config,
   ]
 }
 
@@ -691,6 +703,10 @@ resource "azapi_resource" "proxy" {
           { name = "GATEWAY_ORIGIN", value = local.gateway_internal },
           { name = "PUBLIC_ORIGIN", value = local.proxy_origin },
           { name = "GS_IDENTITY_HEADER", value = "sec-username" },
+          # Roles header injected alongside the principal so GeoServer's headerAuth filter
+          # (roleSource=Header) can grant ROLE_ADMINISTRATOR without a role-service lookup.
+          { name = "GS_ROLES_HEADER", value = "sec-roles" },
+          { name = "OIDC_ROLES", value = "ROLE_ADMINISTRATOR" },
           # Principal injected as sec-username. `email` (lower-cased) so GeoServer's UI
           # shows an identifiable username; the default XML role service keys roles on it.
           # The stable IDIR GUID is captured separately (USER_GUID_CLAIM) for audit/reference.
@@ -718,15 +734,15 @@ resource "azapi_resource" "proxy" {
           # pgconfig DB — auto-register users in gssec.user_display_names on first OIDC login
           # so the GeoServer admin can see who has authenticated and assign roles.
           # The proxy already has VNet integration and reaches the private PostgreSQL endpoint.
-          { name = "PGCONFIG_HOST",     value = module.postgres.fqdn },
-          { name = "PGCONFIG_PORT",     value = "5432" },
+          { name = "PGCONFIG_HOST", value = module.postgres.fqdn },
+          { name = "PGCONFIG_PORT", value = "5432" },
           { name = "PGCONFIG_DATABASE", value = module.postgres.config_database_name },
           { name = "PGCONFIG_USERNAME", value = module.postgres.administrator_login },
 
           # KV references — reference strings (not values) in state; resolved at runtime
-          { name = "OIDC_CLIENT_SECRET",      value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
-          { name = "SESSION_COOKIE_SECRET",   value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
-          { name = "PGCONFIG_PASSWORD",       value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
+          { name = "OIDC_CLIENT_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
+          { name = "SESSION_COOKIE_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
+          { name = "PGCONFIG_PASSWORD", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
           # GeoServer admin REST — registers each IDIR user in the default user/group
           # service so they appear under Security → Users/Groups in the GeoServer UI.
           # Reuses the same secret as the GeoServer environment-admin-auth profile.

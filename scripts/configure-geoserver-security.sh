@@ -10,7 +10,9 @@
 #      services that load reliably. Role assignment is done in the GeoServer UI/REST.
 #   3. Cleans up any previously-uploaded JDBC role service + idir user/group service
 #      files (both crash the Security page on load).
-#   4. Wires headerAuth into the web/default/gwc filter chains.
+#   4. Wires headerAuth into the web/default/gwc/rest filter chains.
+#      The rest chain MUST be included so that OIDC-authenticated browser sessions
+#      can use the REST API without being asked for a username/password.
 #   5. Bootstraps the super admin (ADMIN_PRINCIPAL email -> ROLE_ADMINISTRATOR).
 #   6. Verifies the result.
 #
@@ -79,7 +81,10 @@ echo "Reloading GeoServer after cleanup..."
 gs_curl -X POST "${GS}/rest/reload" -w '  reload -> HTTP %{http_code}\n' || true
 
 # ---------------------------------------------------------------------------
-# 2. Request-header pre-auth filter -> built-in default XML role service.
+# 2. Request-header pre-auth filter.
+#    roleSource=Header: the Node OIDC proxy injects sec-roles directly so
+#    GeoServer does NOT need a role-service lookup per request.  The proxy
+#    injects ROLE_ADMINISTRATOR for every authenticated IDIR session.
 # ---------------------------------------------------------------------------
 cat > "${TMP}/headerfilter.xml" <<FILTER
 <org.geoserver.security.config.RequestHeaderAuthenticationFilterConfig>
@@ -87,11 +92,12 @@ cat > "${TMP}/headerfilter.xml" <<FILTER
   <className>org.geoserver.security.filter.GeoServerRequestHeaderAuthenticationFilter</className>
   <roleServiceName>${ROLE_SERVICE}</roleServiceName>
   <principalHeaderAttribute>sec-username</principalHeaderAttribute>
-  <roleSource class="org.geoserver.security.config.PreAuthenticatedUserNameFilterConfig\$PreAuthenticatedUserNameRoleSource">RoleService</roleSource>
+  <rolesHeaderAttribute>sec-roles</rolesHeaderAttribute>
+  <roleSource class="org.geoserver.security.config.PreAuthenticatedUserNameFilterConfig\$PreAuthenticatedUserNameRoleSource">Header</roleSource>
 </org.geoserver.security.config.RequestHeaderAuthenticationFilterConfig>
 FILTER
 
-echo "Configuring headerAuth filter (roleServiceName=${ROLE_SERVICE})..."
+echo "Configuring headerAuth filter (roleSource=Header, rolesHeaderAttribute=sec-roles)..."
 # A per-name GET of a missing filter returns "<null/>" with HTTP 200, so decide
 # create vs update from the filter LIST.
 if gs_curl "${GS}/rest/security/authfilters.xml" | grep -q "<name>headerAuth</name>"; then
@@ -109,25 +115,41 @@ case "${filter_code}" in
 esac
 
 # ---------------------------------------------------------------------------
-# 3. Wire headerAuth into the web/default/gwc filter chains.
+# 3. Wire headerAuth into the web/default/gwc/rest filter chains.
 # ---------------------------------------------------------------------------
 echo "Wiring headerAuth into filter chains..."
 gs_curl "${GS}/rest/resource/security/config.xml" -o "${TMP}/config.xml"
-if grep -q "<filter>headerAuth</filter>" "${TMP}/config.xml"; then
-  echo "  headerAuth already present in filter chains, skipping."
-else
-  for chain in web default gwc; do
-    sed -zi "s|<filters name=\"${chain}\" \([^>]*\)>|<filters name=\"${chain}\" \1><filter>headerAuth</filter>|" "${TMP}/config.xml"
-  done
-  if grep -q "<filter>headerAuth</filter>" "${TMP}/config.xml"; then
-    echo "  Injected headerAuth into web/default/gwc chains."
-    gs_curl -X PUT -H "Content-Type: application/xml" --data-binary @"${TMP}/config.xml" \
-      "${GS}/rest/resource/security/config.xml" -w '  config.xml chains -> HTTP %{http_code}\n'
-  else
-    echo "  ERROR: sed found no matching <filters name=...> elements." >&2
-    grep -n 'filters name' "${TMP}/config.xml" >&2 || true
-    exit 1
+
+# Bash-native idempotency check: extract the lines for a specific <filters name="...">
+# block and grep for the target filter.  No Python dependency.
+chain_has_filter() {
+  local chain="$1" filter="$2" file="$3"
+  sed -n "/<filters name=\"${chain}\"[^>]*>/,/<\/filters>/p" "${file}" 2>/dev/null | \
+    grep -q "<filter>${filter}</filter>"
+}
+
+changed=0
+for chain in web default gwc rest; do
+  if chain_has_filter "${chain}" "headerAuth" "${TMP}/config.xml"; then
+    echo "  headerAuth already in ${chain} chain — skipping."
+    continue
   fi
+  before="$(wc -c < "${TMP}/config.xml")"
+  sed -zi "s|<filters name=\"${chain}\" \([^>]*\)>|<filters name=\"${chain}\" \1><filter>headerAuth</filter>|" "${TMP}/config.xml"
+  after="$(wc -c < "${TMP}/config.xml")"
+  if [ "${after}" -gt "${before}" ]; then
+    echo "  Injected headerAuth into ${chain} chain."
+    changed=$((changed + 1))
+  else
+    echo "  WARNING: ${chain} chain not found in config.xml — skipping (non-fatal)."
+  fi
+done
+
+if [ "${changed}" -gt 0 ]; then
+  gs_curl -X PUT -H "Content-Type: application/xml" --data-binary @"${TMP}/config.xml" \
+    "${GS}/rest/resource/security/config.xml" -w '  config.xml chains -> HTTP %{http_code}\n'
+else
+  echo "  All chains already configured — no upload needed."
 fi
 echo "Reloading GeoServer configuration..."
 gs_curl -X POST "${GS}/rest/reload" -w '  reload -> HTTP %{http_code}\n' || true
@@ -148,16 +170,15 @@ if [ -n "${ADMIN_PRINCIPAL}" ]; then
     409|500) echo "  admin user already exists (${uc})" ;;
     *)      echo "  WARNING: create admin user returned ${uc} (non-fatal)" ;;
   esac
-  # 4b. Ensure the ADMIN role exists (it should in the default XML role service),
-  #     then associate it with the admin user. GeoServer Cloud's default role service
-  #     uses "ADMIN" (not "ROLE_ADMINISTRATOR") as the admin role name.
-  gs_curl -o /dev/null -w '  ensure ADMIN role -> HTTP %{http_code}\n' \
-    -X POST "${GS}/rest/security/roles/role/ADMIN" 2>/dev/null || true
+  # 4b. Ensure ROLE_ADMINISTRATOR exists, then associate it with the admin user.
+  #     GeoServer's interceptors use ROLE_ADMINISTRATOR for the admin bypass check.
+  gs_curl -o /dev/null -w '  ensure ROLE_ADMINISTRATOR -> HTTP %{http_code}\n' \
+    -X POST "${GS}/rest/security/roles/role/ROLE_ADMINISTRATOR" 2>/dev/null || true
   rc="$(gs_curl -o /dev/null -w '%{http_code}' -X POST \
-    "${GS}/rest/security/roles/role/ADMIN/user/${ADMIN_PRINCIPAL}" 2>/dev/null || echo 000)"
+    "${GS}/rest/security/roles/role/ROLE_ADMINISTRATOR/user/${ADMIN_PRINCIPAL}" 2>/dev/null || echo 000)"
   case "${rc}" in
-    2*) echo "  associated ADMIN with ${ADMIN_PRINCIPAL} (${rc})" ;;
-    *)  echo "  WARNING: could not associate ADMIN role (${rc}). Assign it in the UI as 'admin'." ;;
+    2*) echo "  associated ROLE_ADMINISTRATOR with ${ADMIN_PRINCIPAL} (${rc})" ;;
+    *)  echo "  WARNING: could not associate ROLE_ADMINISTRATOR role (${rc}). Assign it in the UI as 'admin'." ;;
   esac
   gs_curl -X POST "${GS}/rest/reload" -o /dev/null || true
 else
@@ -173,7 +194,7 @@ check() {
   if gs_curl "${GS}${1}" | grep -q "${2}"; then echo "  OK   ${3}"; else echo "  FAIL ${3}"; fail=1; fi
 }
 check "/rest/security/authfilters.xml"     "headerAuth"          "headerAuth filter present"
-check "/rest/security/authfilters/headerAuth.xml" "<roleServiceName>${ROLE_SERVICE}</roleServiceName>" "headerAuth uses ${ROLE_SERVICE} role service"
+check "/rest/security/authfilters/headerAuth.xml" "<rolesHeaderAttribute>sec-roles</rolesHeaderAttribute>" "headerAuth roleSource=Header with sec-roles attribute"
 check "/rest/resource/security/config.xml" "headerAuth"          "headerAuth wired into chains"
 # Default user/group service reachable (Security page health) + user count.
 if gs_curl "${GS}/rest/security/usergroup/service/${UG_SERVICE}/users.json" -o "${TMP}/ug.json" 2>/dev/null \

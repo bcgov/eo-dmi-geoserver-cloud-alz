@@ -120,7 +120,6 @@ export function createApp(): express.Express {
           principal: result.username, // shown in full — this becomes sec-username
           hasGuid: !!result.guid,
           hasDisplayName: !!result.displayName,
-          displayName: result.displayName ?? null,
           accessExp: result.accessExp,
           returnTo: result.returnTo,
         },

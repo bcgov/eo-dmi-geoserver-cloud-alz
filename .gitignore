@@ -46,3 +46,33 @@ terraform.rc
 *local*.ps1
 *local*.md
 tfplan
+.copilot-memory
+
+# Node.js
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.*.local
+
+
+# Tool configs
+mise.toml
+.pytest_cache
+__pycache__
+.venv
+*.pyc
+*.pyo
+.venv/
+.env
+.env.*
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

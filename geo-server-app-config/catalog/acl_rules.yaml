@@ -1,0 +1,11 @@
+acl_rules:
+  - priority: 10
+    role: ROLE_AUTHENTICATED
+    workspace: wildlife
+    layer: "*"
+    access: READ
+  - priority: 20
+    role: ROLE_WILDLIFE_EDITOR
+    workspace: wildlife
+    layer: "*"
+    access: WRITE

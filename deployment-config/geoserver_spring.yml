@@ -1,0 +1,57 @@
+# Spring Boot's externalized configuration model allows these server and
+# management settings to be supplied from mounted config files instead of the
+# application image itself.
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  shutdown: graceful
+  tomcat:
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+    accesslog.enabled: ${TOMCAT_ACCESSLOG_ENABLED:false}
+    mbeanregistry.enabled: ${TOMCAT_MBEANREGISTRY_ENABLED:false}
+    threads:
+      min-spare: ${TOMCAT_THREADS_MIN_SPARE:10}
+      max: ${TOMCAT_THREADS_MAX:200}
+
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:}
+  cloud:
+    bus:
+      enabled: true
+      id: ${info.instance-id}
+      trace.enabled: false
+      destination: geoserver
+  jackson:
+    default-property-inclusion: non-empty
+    serialization.indent-output: false
+
+management:
+  endpoints:
+    enabled-by-default: true
+    web.exposure.include: "*"
+  endpoint:
+    env.show-values: NEVER
+    configprops.show-values: NEVER
+    info.enabled: true
+    metrics.enabled: true
+    startup.enabled: true
+    shutdown.enabled: false
+    health:
+      enabled: true
+      probes.enabled: true
+      show-details: always
+  metrics:
+    binders:
+      processor.enabled: true
+      uptime.enabled: true
+      jvm.enabled: true
+    enable.all: true
+    enable.jvm: true
+    export:
+      atlas.enabled: false

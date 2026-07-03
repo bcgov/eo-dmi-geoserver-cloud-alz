@@ -33,9 +33,14 @@ output "environment_static_ip" {
   value       = module.container_app_environment.static_ip_address
 }
 
-output "gateway_fqdn" {
-  description = "Internal FQDN of the GeoServer gateway (entry point over the VNet)."
-  value       = try(module.service["gateway"].fqdn, null)
+output "gateway_url" {
+  description = "GeoServer REST base URL — gateway public FQDN with the /geoserver/cloud base path injected by GEOSERVER_BASE_PATH."
+  value       = try("https://${module.service["gateway"].fqdn}/geoserver/cloud", null)
+}
+
+output "acl_url" {
+  description = "Internal URL of the GeoServer Cloud ACL service REST API (reachable from VNet)."
+  value       = "https://${module.acl.fqdn}/acl/api"
 }
 
 output "postgres_fqdn" {

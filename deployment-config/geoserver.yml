@@ -1,0 +1,110 @@
+# GeoServer production guidance treats runtime configuration as something that can
+# be managed outside the packaged image, especially for container deployments.
+# This file keeps the service-specific settings in a mounted config bundle so the
+# same image can be reused across environments.
+spring.config.import:
+  - geoserver_spring.yml
+  - optional: geoserver_logging.yml
+  - optional: geoserver_control_flow.yml
+  - jndi.yml
+
+# These values configure GeoServer runtime behaviour, including access control,
+# data-directory handling, and the extension modules that are enabled.
+spring:
+  cache:
+    type: caffeine
+    caffeine:
+      spec: softValues,initialCapacity=10000,maximumSize=10000,recordStats
+
+server:
+  compression:
+    enabled: false
+
+geoserver:
+  debug:
+    instanceId: false
+  acl:
+    client:
+      enabled: ${ACL_ENABLED:false}
+      basePath: ${ACL_URL:http://acl:8080/acl/api}
+      username: ${ACL_USERNAME:}
+      password: ${ACL_PASSWORD:}
+      caching: ${ACL_CACHING:true}
+      initTimeout: ${ACL_INIT_TIMEOUT:10}
+  metrics:
+    enabled: true
+    instance-id: ${info.instance-id}
+  servlet.filter.session-debug.enabled: false
+  catalog:
+    caching.enabled: false
+  bus:
+    enabled: ${GEOSERVER_BUS_ENABLED:true}
+    send-events: true
+    send-object: ${GEOSERVER_BACKEND_DATA_DIRECTORY_ENABLED:false}
+    send-diff: ${GEOSERVER_BACKEND_DATA_DIRECTORY_ENABLED:false}
+  backend:
+    data-directory:
+      enabled: ${BACKEND_DATA_DIRECTORY:false}
+      location: "${geoserver.datadir:${GEOSERVER_DATA_DIR:/opt/app/data_directory}}"
+      eventual-consistency:
+        enabled: true
+        retries: 25, 25, 50
+    pgconfig:
+      enabled: ${BACKEND_PGCONFIG:false}
+      initialize: ${PGCONFIG_INITIALIZE:true}
+      schema: ${PGCONFIG_SCHEMA:pgconfig}
+      create-schema: true
+      datasource:
+        jndi-name: ${PGCONFIG_JNDI_NAME:}
+        url: "${PGCONFIG_URL:jdbc:postgresql://${PGCONFIG_HOST:geodatabase}:${PGCONFIG_PORT:5432}/${PGCONFIG_DATABASE:geoserver}}"
+        username: ${PGCONFIG_USERNAME:geoserver}
+        password: ${PGCONFIG_PASSWORD:geoserver}
+        driverClassname: ${PGCONFIG_DRIVER_CLASSNAME:org.postgresql.Driver}
+        minimumIdle: ${PGCONFIG_MIN_CONNECTIONS:0}
+        maximumPoolSize: ${PGCONFIG_MAX_CONNECTIONS:10}
+        connectionTimeout: ${PGCONFIG_CONNECTION_TIMEOUT:2500}
+        idleTimeout: ${PGCONFIG_IDLE_TIMEOUT:30000}
+  extension:
+    appschema:
+      enabled: ${GEOSERVER_APPSCHEMA_ENABLED:false}
+    inspire:
+      enabled: ${GEOSERVER_INSPIRE_ENABLED:false}
+    css-styling:
+      enabled: true
+    dxf:
+      enabled: true
+    flatgeobuf:
+      enabled: true
+    importer:
+      enabled: false
+    mapbox-styling:
+      enabled: true
+    ogcapi:
+      features:
+        enabled: true
+    pmtiles:
+      enabled: true
+    vector-tiles:
+      enabled: true
+      mapbox: true
+      geojson: true
+      topojson: true
+    security:
+      acl:
+        enabled: ${ACL_ENABLED:false}
+      auth-key:
+        enabled: ${GEOSERVER_SECURITY_AUTHKEY:true}
+      jdbc:
+        enabled: ${GEOSERVER_SECURITY_JDBC:true}
+      ldap:
+        enabled: ${GEOSERVER_SECURITY_LDAP:true}
+      geonode-oauth2:
+        enabled: ${GEOSERVER_SECURITY_GEONODE_ENABLED:true}
+      environment-admin:
+        enabled: ${GEOSERVER_SECURITY_ENVIRONMENT_ADMIN_ENABLED:true}
+      gateway-shared-auth:
+        enabled: ${GEOSERVER_SECURITY_GATEWAY_SHARED_AUTH_ENABLED:true}
+        auto: ${GEOSERVER_SECURITY_GATEWAY_SHARED_AUTH_AUTO:true}
+  wms:
+    reflector.enabled: true
+    kml.enabled: true

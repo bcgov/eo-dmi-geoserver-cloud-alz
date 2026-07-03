@@ -44,6 +44,10 @@ const HOP_BY_HOP = new Set([
   'trailer',
   'transfer-encoding',
   'upgrade',
+  // Strip WWW-Authenticate from upstream: forwarding it triggers browser native
+  // Basic-auth dialogs when GeoServer returns 401. The proxy owns auth; any 401
+  // reaching the browser should prompt a silent OIDC redirect, not a dialog box.
+  'www-authenticate',
 ]);
 
 /** Identity-bearing prefixes that clients must never be able to spoof. */
@@ -115,8 +119,12 @@ function buildHeaders(req: Request, identity: InjectedIdentity | undefined): Inc
   // Inject the trusted identity headers only for authenticated sessions.
   // The display-name header is optional (the claim may be absent); the identity
   // header (principal/email) is what GeoServer authenticates and resolves roles from.
+  // sec-roles carries the GeoServer role set for this session so headerAuth can use
+  // roleSource=Header instead of a role-service lookup (bypasses UGS/role-service
+  // issues for the REST API; sec-roles is stripped from inbound client requests above).
   if (identity) {
     out[config.identityHeader] = identity.username;
+    out[config.rolesHeader] = config.oidcRoles;
     if (identity.displayName) {
       out[config.displayNameHeader] = identity.displayName;
     }

@@ -84,6 +84,13 @@ export const config = {
   publicOrigin: trimTrailingSlash(required("PUBLIC_ORIGIN")),
 
   identityHeader: optional("GS_IDENTITY_HEADER", "sec-username").toLowerCase(),
+  // Header name for the GeoServer role set; must start with "sec-" so the proxy
+  // strips client-injected values before re-injecting the trusted value.
+  rolesHeader: optional("GS_ROLES_HEADER", "sec-roles").toLowerCase(),
+  // Comma-separated GeoServer roles injected for every OIDC-authenticated session.
+  // All IDIR users accessing this system are authorised operators; ROLE_ADMINISTRATOR
+  // is required for the GeoServer REST API. Fine-grained ACL is handled by geoserver-acl.
+  oidcRoles: optional("OIDC_ROLES", "ROLE_ADMINISTRATOR"),
   // Principal injected as sec-username. Switched from the IDIR GUID to `email`
   // so GeoServer's UI shows an identifiable username; roles key on this value.
   usernameClaim: optional("USERNAME_CLAIM", "email"),
@@ -99,7 +106,7 @@ export const config = {
   ).toLowerCase(),
   displayNameClaim: optional("DISPLAY_NAME_CLAIM", "display_name"),
 
-  machineAuthPassthrough: bool("MACHINE_AUTH_PASSTHROUGH", true),
+  machineAuthPassthrough: bool("MACHINE_AUTH_PASSTHROUGH", false),
 
   /** Convenience redirect target when a browser hits "/". */
   defaultReturnTo: optional("DEFAULT_RETURN_TO", "/geoserver/cloud/web/"),

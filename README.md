@@ -81,6 +81,7 @@ eo-dmi-geo-server-cloud/
 │   ├── rabbitmq/                  # RabbitMQ event bus (Container App)
 │   └── geoserver-service/         # one GeoServer Cloud microservice (reusable)
 ├── stack/                         # single shared stack — one copy of the config
+├── geo-server-app-config/        # catalog reconciliation + app-config bundle
 │   ├── backend.tf  providers.tf  versions.tf  data.tf
 │   ├── main.tf  locals.tf  variables.tf  outputs.tf
 │   └── terraform.tfvars           # per-env values; env identity injected via TF_VAR_*

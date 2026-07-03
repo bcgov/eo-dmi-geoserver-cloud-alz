@@ -65,7 +65,7 @@ locals {
     wcs   = { repo = "geoserver-cloud-wcs", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = {} }
     # wps: ACL profile excluded (WPS service does not use data-layer ACL).
     # environment-admin-auth kept so admin credentials are consistent across services.
-    wps  = { repo = "geoserver-cloud-wps", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig,environment-admin-auth" } }
+    wps  = { repo = "geoserver-cloud-wps", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = { SPRING_PROFILES_ACTIVE = "standalone,pgconfig,environment-admin-auth", ACL_ENABLED = "false" } }
     rest = { repo = "geoserver-cloud-rest", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 2, cpu = 2, memory = "4Gi", extra_env = {} }
     gwc  = { repo = "geoserver-cloud-gwc", port = 8080, external = false, sticky = false, min_replicas = 1, max_replicas = 3, cpu = 2, memory = "4Gi", extra_env = {} }
   }
@@ -130,13 +130,17 @@ locals {
     PGCONFIG_SCHEMA     = "pgconfig"
     PGCONFIG_INITIALIZE = "true"
 
-    GEOSERVER_BUS_ENABLED = "true"
-    RABBITMQ_HOST         = module.container_app_environment.static_ip_address
-    RABBITMQ_PORT         = "5672"
-    RABBITMQ_USER         = var.rabbitmq_user
+    GEOSERVER_BUS_ENABLED             = "true"
+    RABBITMQ_HOST                     = module.container_app_environment.static_ip_address
+    RABBITMQ_PORT                     = "5672"
+    RABBITMQ_USER                     = var.rabbitmq_user
+    SPRING_CONFIG_ADDITIONAL_LOCATION = "/etc/gscloud/deployment-config/"
 
     ACL_URL      = "https://acl.internal.${module.container_app_environment.default_domain}/acl/api"
     ACL_USERNAME = "geoserver"
+    # Explicitly enable ACL so the deployment-config's ${ACL_ENABLED:false} default
+    # is overridden even if Spring profile config data precedence shifts across versions.
+    ACL_ENABLED  = "true"
 
     GEOWEBCACHE_CACHE_DIR = "/tmp/geowebcache"
 
