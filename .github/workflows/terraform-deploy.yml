@@ -99,12 +99,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Installs terraform, python, tflint, uv from mise.toml; also exports
-      # CHECKOV_VERSION from mise.toml [env] into subsequent step environments.
+      # Installs all tools pinned in mise.toml; also exports CHECKOV_VERSION
+      # from mise.toml [env] into subsequent step environments.
+      #
+      # install_args is intentionally omitted: passing bare tool names (e.g.
+      # "terraform python") makes mise do ad hoc @latest installs instead of
+      # reading the pinned versions from mise.toml, and leaves the shims
+      # unactivated ("No version is set for shim: terraform"). Omitting it
+      # runs plain `mise install`, which installs and activates everything
+      # declared in mise.toml.
       - name: Install tools (mise)
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
-        with:
-          install_args: terraform python tflint uv
 
       - name: terraform fmt
         run: terraform fmt -check -recursive
@@ -155,8 +160,6 @@ jobs:
 
       - name: Install tools (mise)
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
-        with:
-          install_args: terraform
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
@@ -209,8 +212,6 @@ jobs:
 
       - name: Install tools (mise)
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
-        with:
-          install_args: terraform python uv
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
