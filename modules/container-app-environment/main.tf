@@ -21,7 +21,7 @@ resource "azurerm_container_app_environment" "this" {
   resource_group_name = var.resource_group_name
   location            = var.location
 
-  log_analytics_workspace_id         = var.log_analytics_workspace_id
+  log_analytics_workspace_id         = var.enable_diagnostics ? var.log_analytics_workspace_id : null
   infrastructure_subnet_id           = var.infrastructure_subnet_id
   infrastructure_resource_group_name = "ME-${var.resource_group_name}"
   internal_load_balancer_enabled     = var.internal_load_balancer_enabled
@@ -56,6 +56,8 @@ resource "azurerm_container_app_environment" "this" {
 # The azurerm_container_app_environment resource doesn't properly set the
 # Log Analytics shared key. Use azapi to patch the configuration.
 resource "azapi_update_resource" "container_app_env_logs" {
+  count = var.enable_diagnostics ? 1 : 0
+
   type        = "Microsoft.App/managedEnvironments@2024-03-01"
   resource_id = azurerm_container_app_environment.this.id
 

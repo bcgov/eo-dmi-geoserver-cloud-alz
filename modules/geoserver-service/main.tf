@@ -47,6 +47,10 @@ resource "azurerm_container_app" "this" {
     # stickySessions is NOT declared here: azurerm_container_app (azurerm ≥4.79) raises
     # "Blocks of type sticky_sessions are not expected here" even though the ARM API accepts
     # the property. The stack patches it via azapi_update_resource after creation.
+    # A `sticky_sessions` module variable was removed (2026-07) as dead code — it was
+    # never wired to a resource. Once azurerm exposes stickySessions on the ingress
+    # block, re-add the variable here, add a `sticky_sessions { affinity = ... }`
+    # block above, and drop the azapi_update_resource workaround in the stack.
     external_enabled           = var.external_ingress
     target_port                = var.target_port
     transport                  = var.transport

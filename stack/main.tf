@@ -498,12 +498,11 @@ module "service" {
   # Per-service resource + scaling knobs (independent per GeoServer Cloud service,
   # defined in local.services). Fall back to the global var defaults if a service
   # entry omits one, so adding a service without these keys still plans cleanly.
-  cpu             = try(each.value.cpu, var.service_cpu)
-  memory          = try(each.value.memory, var.service_memory)
-  sticky_sessions = each.value.sticky
-  min_replicas    = each.value.min_replicas
-  max_replicas    = try(each.value.max_replicas, var.service_max_replicas)
-  tags            = module.naming.common_tags
+  cpu          = try(each.value.cpu, var.service_cpu)
+  memory       = try(each.value.memory, var.service_memory)
+  min_replicas = try(each.value.min_replicas, var.service_min_replicas)
+  max_replicas = try(each.value.max_replicas, var.service_max_replicas)
+  tags         = module.naming.common_tags
 
   config_mount_enabled = true
   config_mount_path    = "/etc/gscloud/deployment-config"
