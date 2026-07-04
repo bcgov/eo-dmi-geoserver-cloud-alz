@@ -99,8 +99,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Installs all tools pinned in mise.toml; also exports CHECKOV_VERSION
-      # from mise.toml [env] into subsequent step environments.
+      # Installs all tools pinned in mise.toml; also exports mise.toml's [env]
+      # table (e.g. CHECKOV_VERSION) into GITHUB_ENV for subsequent steps.
       #
       # install_args is intentionally omitted: passing bare tool names (e.g.
       # "terraform python") makes mise do ad hoc @latest installs instead of
@@ -109,7 +109,7 @@ jobs:
       # runs plain `mise install`, which installs and activates everything
       # declared in mise.toml.
       - name: Install tools (mise)
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       - name: terraform fmt
         run: terraform fmt -check -recursive
@@ -159,7 +159,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install tools (mise)
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
@@ -211,7 +211,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install tools (mise)
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       - name: Azure login (OIDC)
         uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
