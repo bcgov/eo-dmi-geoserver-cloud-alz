@@ -140,7 +140,7 @@ locals {
     ACL_USERNAME = "geoserver"
     # Explicitly enable ACL so the deployment-config's ${ACL_ENABLED:false} default
     # is overridden even if Spring profile config data precedence shifts across versions.
-    ACL_ENABLED  = "true"
+    ACL_ENABLED = "true"
 
     GEOWEBCACHE_CACHE_DIR = "/tmp/geowebcache"
 

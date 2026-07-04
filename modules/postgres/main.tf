@@ -24,9 +24,9 @@ resource "azurerm_postgresql_flexible_server" "this" {
 
   administrator_login    = var.administrator_login
   administrator_password = random_password.admin.result
-  auto_grow_enabled       = true
-  sku_name   = var.sku_name
-  storage_mb = var.storage_mb
+  auto_grow_enabled      = true
+  sku_name               = var.sku_name
+  storage_mb             = var.storage_mb
 
   # Private-endpoint networking: no public access, no delegated subnet.
   public_network_access_enabled = false
