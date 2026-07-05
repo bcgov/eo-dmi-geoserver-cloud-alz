@@ -1,0 +1,9 @@
+feature_types:
+  - workspace: wildlife
+    store: wildlife_postgis
+    name: veg_comp_poly
+    native_name: veg_comp_poly
+    title: Vegetation Composite Polygons (VRI)
+    srs: EPSG:3005          # BC Albers
+    enabled: true
+    default_style: basic_polygon

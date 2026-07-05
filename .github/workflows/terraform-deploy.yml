@@ -1,0 +1,253 @@
+# Reusable Terraform deploy workflow for the BC Gov Azure Landing Zone.
+#
+# Contract:
+#   inputs.environment  dev | test | prod  (selects the gated GitHub Environment)
+#   inputs.apply         when true, runs the gated apply job after plan
+#
+# Tool versions (Terraform, Python, TFLint, Checkov, uv) are pinned in
+# mise.toml at the repo root. jdx/mise-action installs them in every job
+# from that single source of truth — do not add per-step version pins here.
+#
+# All environments share the single stack/ directory. Environment-specific
+# values are injected via GitHub Environment Variables (vars.*) mapped to
+# TF_VAR_* below. Required GitHub Variables per environment:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  — OIDC auth
+#   BACKEND_RESOURCE_GROUP, BACKEND_STORAGE_ACCOUNT           — Terraform state
+#   TF_RESOURCE_GROUP    — workload resource group to create
+#   TF_VNET_NAME         — spoke VNet name
+#   TF_VNET_RESOURCE_GROUP — VNet resource group (locked networking RG)
+#   TF_ACA_SUBNET_CIDR   — CIDR for the ACA subnet to create (e.g. 10.46.10.32/27)
+#   TF_PE_SUBNET         — name of the pre-existing private endpoints subnet
+#   TF_ACR_NAME          — container registry name (globally unique)
+#   TF_KEY_VAULT_NAME    — key vault name (globally unique)
+#   TF_POSTGRES_SERVER   — PostgreSQL server name (globally unique)
+#   TF_GS_CLOUD_VERSION  — GeoServer Cloud image tag to deploy
+#
+# Optional GitHub Variables (fall back to defaults in stack/variables.tf):
+#   TF_MINISTRY_NAME, TF_POSTGRES_SKU, TF_ZONE_REDUNDANCY,
+#   TF_POSTGRES_HA, TF_SERVICE_CPU, TF_SERVICE_MEMORY, TF_SERVICE_MAX_REPLICAS,
+#   TF_ACL_VERSION, TF_KV_PUBLIC_ACCESS, TF_KV_NETWORK_ACTION
+#
+# Auth: OIDC federated identity only. Federated credential subject must be:
+#   repo:<org>/<repo>:environment:<environment>
+#
+# ACTION PINNING: third-party actions are pinned to an immutable commit SHA with
+# the human-readable version in a trailing comment; first-party actions/* use a
+# major-version tag (GitHub forward-guarantees those). Dependabot
+# (.github/dependabot.yml) keeps both styles current.
+
+name: terraform-deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment (dev, test, prod).
+        type: string
+        required: true
+      apply:
+        description: Apply after plan (gated by the GitHub Environment).
+        type: boolean
+        required: false
+        default: false
+
+# Deny-all baseline: every job starts with zero token scope and steps up only to
+# the scopes it needs (declared per job below).
+permissions: {}
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  # Azure auth — GitHub Variables (set per GitHub Environment).
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+
+  # Terraform backend — state isolated per environment via the key.
+  TFSTATE_RESOURCE_GROUP: ${{ vars.BACKEND_RESOURCE_GROUP }}
+  TFSTATE_STORAGE_ACCOUNT: ${{ vars.BACKEND_STORAGE_ACCOUNT }}
+  TFSTATE_KEY: geoserver-cloud/${{ inputs.environment }}.tfstate
+
+  # Required Terraform variables — MUST be set in each GitHub Environment.
+  TF_VAR_environment: ${{ inputs.environment }}
+  TF_VAR_resource_group_name: ${{ vars.TF_RESOURCE_GROUP }}
+  TF_VAR_vnet_name: ${{ vars.TF_VNET_NAME }}
+  TF_VAR_vnet_resource_group_name: ${{ vars.TF_VNET_RESOURCE_GROUP }}
+  TF_VAR_aca_subnet_cidr: ${{ vars.TF_ACA_SUBNET_CIDR }}
+  TF_VAR_private_endpoints_subnet_name: ${{ vars.TF_PE_SUBNET }}
+  TF_VAR_acr_name: ${{ vars.TF_ACR_NAME }}
+  TF_VAR_key_vault_name: ${{ vars.TF_KEY_VAULT_NAME }}
+  TF_VAR_postgres_server_name: ${{ vars.TF_POSTGRES_SERVER }}
+  TF_VAR_gs_cloud_version: ${{ vars.TF_GS_CLOUD_VERSION }}
+
+jobs:
+  # ------------------------------------------------------------------ checks
+  # Static gates — no cloud credentials required.
+  checks:
+    name: fmt / validate / tflint / checkov
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Static gates: no cloud auth, no PR writes — read the code and nothing else.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Installs all tools pinned in mise.toml; also exports mise.toml's [env]
+      # table (e.g. CHECKOV_VERSION) into GITHUB_ENV for subsequent steps.
+      #
+      # install_args is intentionally omitted: passing bare tool names (e.g.
+      # "terraform python") makes mise do ad hoc @latest installs instead of
+      # reading the pinned versions from mise.toml, and leaves the shims
+      # unactivated ("No version is set for shim: terraform"). Omitting it
+      # runs plain `mise install`, which installs and activates everything
+      # declared in mise.toml.
+      - name: Install tools (mise)
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate (offline)
+        run: |
+          set -euo pipefail
+          terraform -chdir=stack init -backend=false -input=false
+          terraform -chdir=stack validate
+
+      - name: tflint
+        env:
+          # Authenticated plugin download avoids anonymous GitHub API rate limits.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tflint --init
+          tflint --recursive
+
+      - name: Checkov (fail on HIGH/CRITICAL)
+        run: |
+          set -euo pipefail
+          # CHECKOV_VERSION is exported from mise.toml [env] by the mise step above.
+          pip install --quiet "checkov==${CHECKOV_VERSION}"
+          checkov --directory . --quiet --compact --hard-fail-on HIGH,CRITICAL
+
+      - name: Validate GeoServer catalog
+        run: |
+          set -euo pipefail
+          pip install --quiet -e geo-server-app-config/
+          geoserver-apply validate --catalog-dir geo-server-app-config/catalog
+
+  # -------------------------------------------------------------------- plan
+  plan:
+    name: terraform plan
+    needs: checks
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # id-token for OIDC login. The plan is published via $GITHUB_STEP_SUMMARY,
+    # which needs no extra scope, so nothing more is granted.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install tools (mise)
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Azure login (OIDC)
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform plan
+        run: ./scripts/tf.sh ${{ inputs.environment }} plan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: stack/tfplan
+          # The plan can embed sensitive values; keep it short-lived (only the
+          # immediately-following apply job consumes it) under repo artifact ACLs.
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Plan summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Terraform plan — ${{ inputs.environment }}"
+            echo '```'
+            terraform -chdir=stack show -no-color tfplan 2>/dev/null | tail -n 120 || echo "(plan not available)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------- apply
+  apply:
+    name: terraform apply
+    needs: plan
+    if: ${{ inputs.apply }}
+    # Runner OS pinned in mise.toml [env].GHA_RUNNER (runs-on cannot be dynamic).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Gated by the GitHub Environment (configure required reviewers in repo settings).
+    environment: ${{ inputs.environment }}
+    # id-token for OIDC login; no PR scope needed on apply.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install tools (mise)
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Azure login (OIDC)
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: stack
+
+      - name: Terraform init
+        run: ./scripts/tf.sh ${{ inputs.environment }} init
+
+      - name: Terraform apply (saved plan)
+        run: ./scripts/tf.sh ${{ inputs.environment }} apply
+
+      - name: Install geoserver-config
+        run: pip install --quiet -e "$GITHUB_WORKSPACE/geo-server-app-config"
+
+      - name: GeoServer catalog — dry-run
+        run: |
+          set -euo pipefail
+          geoserver-apply run ${{ inputs.environment }} \
+            --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
+            --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
+            --stack-dir   "$GITHUB_WORKSPACE/stack" \
+            --dry-run
+
+      - name: GeoServer catalog — apply
+        run: |
+          set -euo pipefail
+          geoserver-apply run ${{ inputs.environment }} \
+            --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
+            --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
+            --stack-dir   "$GITHUB_WORKSPACE/stack"

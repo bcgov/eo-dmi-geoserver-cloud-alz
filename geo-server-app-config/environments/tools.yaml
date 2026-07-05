@@ -1,0 +1,31 @@
+# Per-environment settings for geoserver-apply — local/tools deployment.
+#
+# Values may be literal, or named references:
+#   kv://<vault>/<secret>   -> Azure Key Vault (DefaultAzureCredential)
+#   tf://<output>           -> terraform -chdir=../stack output <name>
+
+env: tools
+
+gateway_url: tf://gateway_url
+
+admin_user: admin
+admin_password: kv://kv-geoserver-tools/geoserver-admin-password
+
+acl:
+  base_url: tf://acl_url
+  admin_user: admin
+  admin_password: kv://kv-geoserver-tools/acl-admin-password
+
+postgis_stores:
+  default:
+    host: tf://postgres_fqdn
+    port: 5432
+    database: geodata
+    schema: public
+    user: gsadmin
+    password: kv://kv-geoserver-tools/postgres-password
+    ssl: require
+
+http:
+  timeout_seconds: 30
+  retries: 5

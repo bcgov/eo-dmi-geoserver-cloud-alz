@@ -1,0 +1,31 @@
+[project]
+name = "geoserver-config"
+version = "0.1.0"
+description = "GeoServer Cloud catalog-as-code for eo-dmi-geo-server-cloud"
+requires-python = "==3.14.*"
+dependencies = [
+  "httpx[socks]>=0.27",      # socksio — SOCKS5 for httpx (GeoServer/ACL REST calls)
+  "requests[socks]>=2.32",   # PySocks — SOCKS5 for requests (azure-core/Key Vault calls)
+  "pydantic>=2.7",
+  "PyYAML>=6.0",
+  "typer>=0.12",
+  "azure-identity>=1.17",
+  "azure-keyvault-secrets>=4.8",
+  "tenacity>=8.5",
+]
+
+[project.scripts]
+geoserver-apply = "geoserver_apply:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+only-include = [
+  "geoserver_apply.py",
+  "geoserver_client.py",
+  "reconcile.py",
+  "catalog_schema.py",
+]

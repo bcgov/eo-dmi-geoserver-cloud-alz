@@ -1,0 +1,19 @@
+# mise.toml — single source of truth for all pinned tool versions.
+# Local dev:  mise install        (installs everything)
+# CI:         jdx/mise-action reads this file automatically
+# Dockerfile: NODE_VERSION ARG defaults match [tools].node here
+# https://mise.jdx.dev/
+
+[tools]
+terraform = "1.15.7"
+node      = "24"        # node-oidc-proxy runtime; Dockerfile ARG default matches this
+python    = "3.14"
+tflint    = "0.63.1"
+uv        = "0.10.11"
+
+[env]
+CHECKOV_VERSION        = "3.3.2"   # consumed by the Checkov GHA step
+TFLINT_RULESET_AZURERM = "0.28.0"  # documents .tflint.hcl plugin pin
+# Runner OS is informational — GHA runs-on cannot be set dynamically from a file.
+# Update this together with the runs-on value in .github/workflows/*.yml.
+GHA_RUNNER             = "ubuntu-24.04"

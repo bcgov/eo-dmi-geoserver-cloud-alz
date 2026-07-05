@@ -1,0 +1,20 @@
+# CD prod — manual promotion. Gated by the "prod" GitHub Environment
+# (configure required reviewers in repo settings). Touches IAM/networking-scope
+# resources, so human approval is mandatory.
+name: cd-prod
+
+on:
+  workflow_dispatch:
+
+# Grant the OIDC token scope so the called reusable workflow can authenticate.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: prod
+      apply: true
+    secrets: inherit

@@ -1,0 +1,19 @@
+# CD test — manual promotion. Gated by the "test" GitHub Environment
+# (configure required reviewers in repo settings).
+name: cd-test
+
+on:
+  workflow_dispatch:
+
+# Grant the OIDC token scope so the called reusable workflow can authenticate.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: test
+      apply: true
+    secrets: inherit

@@ -1,0 +1,10 @@
+workspaces:
+  - name: wildlife
+    namespace_uri: https://geo.bc.gov.ca/wildlife
+    isolated: false
+  - name: forestry
+    namespace_uri: https://geo.bc.gov.ca/forestry
+    isolated: false
+  - name: lands
+    namespace_uri: https://geo.bc.gov.ca/lands
+    isolated: false

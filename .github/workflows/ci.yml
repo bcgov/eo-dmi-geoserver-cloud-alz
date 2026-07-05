@@ -1,0 +1,82 @@
+# CI — runs on pull requests. Static checks + plan only (never applies).
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+# Grant the OIDC token scope so the called reusable workflow can authenticate.
+# A reusable workflow's effective permissions are capped by the caller.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # Fail fast on PRs opened from a fork — keep CI (and any future token) off
+  # untrusted code. Maintainers re-land fork work from an in-repo branch.
+  fork-gate:
+    name: fork-gate
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Reject fork PRs
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REPO" != "$BASE_REPO" ]]; then
+            echo "::error::PRs from forks do not run automatically. Re-land from an in-repo branch after review."
+            exit 1
+          fi
+
+  # Enforce Conventional Commits on the PR title — it becomes the squash-merge
+  # commit subject. Mirrors the reference repo's .lint.yml policy.
+  pr-title:
+    name: pr-title
+    needs: fork-gate
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Validate PR title (Conventional Commits)
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Plan against dev for PR feedback. AZURE_* are read from repo-level GitHub
+  # Variables (the plan job is not environment-scoped). The federated credential
+  # must allow the pull_request subject — see docs/runbook.md.
+  plan:
+    needs: fork-gate
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: dev
+      apply: false
+    secrets: inherit
+
+  # Single aggregator = the ONLY required status check to wire in branch
+  # protection. Renaming or splitting the jobs above never touches the ruleset.
+  # `skipped` is treated as a pass; only failure/cancelled blocks the gate.
+  results:
+    name: results
+    if: always()
+    needs: [fork-gate, plan, pr-title]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Verify required jobs succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "Upstream results: ${RESULTS}"
+          for r in ${RESULTS}; do
+            if [[ "${r}" == "failure" || "${r}" == "cancelled" ]]; then
+              echo "::error::A required job did not succeed (${r})."
+              exit 1
+            fi
+          done

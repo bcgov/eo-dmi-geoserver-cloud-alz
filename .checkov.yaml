@@ -1,0 +1,15 @@
+# Checkov configuration. Tightened over time as bootstrap defaults are hardened.
+directory:
+  - .
+compact: true
+quiet: true
+# Skip checks that conflict with deliberate, documented bootstrap decisions.
+# Re-evaluate each when moving to production (see docs/runbook.md).
+skip-check:
+  # ACR: Standard SKU without private endpoint is an accepted ALZ decision here.
+  - CKV_AZURE_139 # ACR public network access
+  - CKV_AZURE_237 # ACR dedicated data endpoints (Premium-only)
+  # Key Vault: public access is enabled for first-apply secret writes from a
+  # hosted runner; harden to private + Deny for production.
+  - CKV_AZURE_109 # Key Vault network ACL default deny
+  - CKV2_AZURE_32 # Key Vault private endpoint enforcement nuance
