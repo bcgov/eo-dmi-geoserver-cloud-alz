@@ -27,5 +27,5 @@ only-include = [
   "geoserver_apply.py",
   "geoserver_client.py",
   "reconcile.py",
-  "schema.py",
+  "catalog_schema.py",
 ]

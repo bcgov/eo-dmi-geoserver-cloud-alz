@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import yaml
 
-from schema import CatalogBundle
+from catalog_schema import CatalogBundle
 from geoserver_client import GeoServerClient
 
 
