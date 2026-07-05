@@ -47,14 +47,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Plan against dev for PR feedback. AZURE_* are read from repo-level GitHub
+  # Plan against tools for PR feedback. AZURE_* are read from repo-level GitHub
   # Variables (the plan job is not environment-scoped). The federated credential
   # must allow the pull_request subject — see docs/runbook.md.
   plan:
     needs: fork-gate
     uses: ./.github/workflows/terraform-deploy.yml
     with:
-      environment: dev
+      environment: tools
       apply: false
     secrets: inherit
 
