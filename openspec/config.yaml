@@ -1,0 +1,49 @@
+schema: spec-driven
+
+context: |
+  Project: GeoServer Cloud on Azure Container Apps — BC Gov Azure Landing Zone (ALZ)
+  Repo: bcgov/eo-dmi-geoserver-cloud-alz
+
+  Tech stack:
+    - Terraform (>=1.15) for all infrastructure (modules/ + stack/)
+    - Python 3.14 + Typer + Pydantic v2 for catalog-as-code (geo-server-app-config/)
+    - GitHub Actions with OIDC federated identity (no client secrets)
+    - Azure Container Apps (internal LB, workload profiles)
+    - PostgreSQL Flexible Server with PostGIS (pgconfig catalog)
+    - Azure Key Vault for secrets (kv:// references in env YAML)
+    - Azure Container Registry (Terraform-imported images)
+    - RabbitMQ event bus (AMQP, Container App)
+    - GeoServer ACL authorization service
+
+  Architecture patterns:
+    - Single Terraform stack/ per environment; env identity injected via TF_VAR_* / TFSTATE_* env vars
+    - Catalog-as-code: geo-server-app-config/ reconciles YAML => GeoServer REST API
+    - Reusable geoserver-service Terraform module for every GeoServer Cloud microservice
+    - No public IPs; gateway is the only egress point on the internal LB
+    - kv://vault/secret and tf://output notation in env YAML for zero-hardcoded secrets
+    - mise.toml is the single source of truth for all pinned tool versions
+
+  Conventions:
+    - Conventional Commits (enforced on PR title by amannn/action-semantic-pull-request)
+    - Terraform naming/tagging via modules/naming/ (BC Gov ALZ mandatory tags)
+    - All environments share stack/; never modify platform *-networking resource groups
+    - Private endpoints + private DNS for PostgreSQL and Key Vault
+    - OIDC-only auth for Terraform state and deployments
+
+  Environments: dev / test / prod
+  CI: PR plan only (ci.yml); CD: push main apply dev (cd-dev.yml), dispatch test/prod (gated)
+
+rules:
+  proposal:
+    - State clearly which Terraform modules or Python files are affected
+    - Include BC Gov ALZ compliance impact (networking, tags, OIDC) if relevant
+    - Note which GitHub Environments and secrets are affected
+  specs:
+    - Use Given/When/Then for behavioural scenarios
+    - Reference concrete resource types (ACA, Key Vault, ACR, etc.) not generic cloud terms
+  design:
+    - Show data-flow or sequence diagrams for any networking change
+    - Specify which Terraform module owns each resource
+  tasks:
+    - Group tasks by layer: Terraform infra / Python catalog / GitHub Actions / docs
+    - Include a validation step (terraform plan or geoserver-apply validate)
