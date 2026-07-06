@@ -1,7 +1,7 @@
 """Thin, idempotent client over the GeoServer REST API.
 
 Drives the Gateway URL, not the individual OWS apps — matches the
-"only the gateway is exposed" topology in stack/main.tf.
+"only the gateway is exposed" topology in infra/stack/main.tf.
 """
 from __future__ import annotations
 import re
@@ -16,7 +16,7 @@ def _strip_spring_encoding(password: str) -> str:
 
     acl-admin-password is stored in Key Vault in Spring's delimited-encoding
     format (e.g. '{noop}rawpassword') for the ACL service's own internal
-    user-store config — see stack/main.tf secret_acl_admin_password. That
+    user-store config — see infra/stack/main.tf secret_acl_admin_password. That
     prefix is a config-time marker, not part of the credential, and must not
     be sent as the HTTP Basic Auth password.
     """

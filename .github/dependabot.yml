@@ -21,8 +21,8 @@ updates:
   # and the shared stack. Grouped so a provider bump lands as one reviewable PR.
   - package-ecosystem: terraform
     directories:
-      - "/modules/*"
-      - "/stack"
+      - "/infra/modules/*"
+      - "/infra/stack"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

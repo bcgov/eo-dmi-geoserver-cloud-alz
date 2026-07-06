@@ -76,3 +76,6 @@ __pycache__
 .ruff_cache/
 .mypy_cache/
 .tokensave
+
+# Claude Code skills (symlinked to .github/skills)
+.claude/skills/
