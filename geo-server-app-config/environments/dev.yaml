@@ -2,7 +2,7 @@
 #
 # Values may be literal, or named references:
 #   kv://<vault>/<secret>   -> Azure Key Vault (DefaultAzureCredential)
-#   tf://<output>           -> terraform -chdir=../stack output <name>
+#   tf://<output>           -> terraform -chdir=../infra/stack output <name>
 
 env: dev
 

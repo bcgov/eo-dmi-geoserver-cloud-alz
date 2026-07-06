@@ -107,7 +107,7 @@ def run(
     env: str = typer.Argument(..., help="dev | test | prod"),
     catalog_dir: Path = typer.Option(Path("catalog"), "--catalog-dir"),
     env_dir: Path = typer.Option(Path("environments"), "--env-dir"),
-    stack_dir: Path = typer.Option(Path("../stack"), "--stack-dir"),
+    stack_dir: Path = typer.Option(Path("../infra/stack"), "--stack-dir"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n"),
 ):
     """Reconcile GeoServer against the catalog YAML for <env>."""

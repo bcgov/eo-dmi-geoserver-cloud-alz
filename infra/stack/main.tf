@@ -597,11 +597,11 @@ resource "null_resource" "build_proxy_image" {
     acr_login_server = module.registry.login_server
     image_tag        = var.proxy_image_tag
     src_hash = sha256(join("", [
-      for f in sort(fileset("${path.root}/../node-oidc-proxy/src", "**"))
-      : filesha256("${path.root}/../node-oidc-proxy/src/${f}")
+      for f in sort(fileset("${path.root}/../../node-oidc-proxy/src", "**"))
+      : filesha256("${path.root}/../../node-oidc-proxy/src/${f}")
     ]))
-    dockerfile_hash = filesha256("${path.root}/../node-oidc-proxy/Dockerfile")
-    package_hash    = filesha256("${path.root}/../node-oidc-proxy/package.json")
+    dockerfile_hash = filesha256("${path.root}/../../node-oidc-proxy/Dockerfile")
+    package_hash    = filesha256("${path.root}/../../node-oidc-proxy/package.json")
   }
 
   provisioner "local-exec" {
@@ -609,7 +609,7 @@ resource "null_resource" "build_proxy_image" {
     environment = {
       ACR_NAME  = var.acr_name
       IMAGE_TAG = var.proxy_image_tag
-      CONTEXT   = "${path.root}/../node-oidc-proxy"
+      CONTEXT   = "${path.root}/../../node-oidc-proxy"
     }
     command = <<-EOT
       set -euo pipefail

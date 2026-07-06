@@ -8,7 +8,7 @@
 # mise.toml at the repo root. jdx/mise-action installs them in every job
 # from that single source of truth — do not add per-step version pins here.
 #
-# All environments share the single stack/ directory. Environment-specific
+# All environments share the single infra/stack/ directory. Environment-specific
 # values are injected via GitHub Environment Variables (vars.*) mapped to
 # TF_VAR_* below. Required GitHub Variables per environment:
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  — OIDC auth
@@ -23,7 +23,7 @@
 #   TF_POSTGRES_SERVER   — PostgreSQL server name (globally unique)
 #   TF_GS_CLOUD_VERSION  — GeoServer Cloud image tag to deploy
 #
-# Optional GitHub Variables (fall back to defaults in stack/variables.tf):
+# Optional GitHub Variables (fall back to defaults in infra/stack/variables.tf):
 #   TF_MINISTRY_NAME, TF_POSTGRES_SKU, TF_ZONE_REDUNDANCY,
 #   TF_POSTGRES_HA, TF_SERVICE_CPU, TF_SERVICE_MEMORY, TF_SERVICE_MAX_REPLICAS,
 #   TF_ACL_VERSION, TF_KV_PUBLIC_ACCESS, TF_KV_NETWORK_ACTION
@@ -117,8 +117,8 @@ jobs:
       - name: terraform validate (offline)
         run: |
           set -euo pipefail
-          terraform -chdir=stack init -backend=false -input=false
-          terraform -chdir=stack validate
+          terraform -chdir=infra/stack init -backend=false -input=false
+          terraform -chdir=infra/stack validate
 
       - name: tflint
         env:
@@ -169,13 +169,13 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform plan
-        run: ./scripts/tf.sh ${{ inputs.environment }} plan
+        run: ./infra/scripts/tf.sh ${{ inputs.environment }} plan
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tfplan-${{ inputs.environment }}
-          path: stack/tfplan
+          path: infra/stack/tfplan
           # The plan can embed sensitive values; keep it short-lived (only the
           # immediately-following apply job consumes it) under repo artifact ACLs.
           retention-days: 1
@@ -188,7 +188,7 @@ jobs:
           {
             echo "## Terraform plan — ${{ inputs.environment }}"
             echo '```'
-            terraform -chdir=stack show -no-color tfplan 2>/dev/null | tail -n 120 || echo "(plan not available)"
+            terraform -chdir=infra/stack show -no-color tfplan 2>/dev/null | tail -n 120 || echo "(plan not available)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -224,13 +224,13 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tfplan-${{ inputs.environment }}
-          path: stack
+          path: infra/stack
 
       - name: Terraform init
-        run: ./scripts/tf.sh ${{ inputs.environment }} init
+        run: ./infra/scripts/tf.sh ${{ inputs.environment }} init
 
       - name: Terraform apply (saved plan)
-        run: ./scripts/tf.sh ${{ inputs.environment }} apply
+        run: ./infra/scripts/tf.sh ${{ inputs.environment }} apply
 
       - name: Install geoserver-config
         run: pip install --quiet -e "$GITHUB_WORKSPACE/geo-server-app-config"
@@ -241,7 +241,7 @@ jobs:
           geoserver-apply run ${{ inputs.environment }} \
             --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
             --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
-            --stack-dir   "$GITHUB_WORKSPACE/stack" \
+            --stack-dir   "$GITHUB_WORKSPACE/infra/stack" \
             --dry-run
 
       - name: GeoServer catalog — apply
@@ -250,4 +250,4 @@ jobs:
           geoserver-apply run ${{ inputs.environment }} \
             --catalog-dir "$GITHUB_WORKSPACE/geo-server-app-config/catalog" \
             --env-dir     "$GITHUB_WORKSPACE/geo-server-app-config/environments" \
-            --stack-dir   "$GITHUB_WORKSPACE/stack"
+            --stack-dir   "$GITHUB_WORKSPACE/infra/stack"

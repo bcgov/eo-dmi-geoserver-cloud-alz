@@ -21,7 +21,7 @@ inside a platform-provided spoke VNet.
         PostgreSQL Flexible Server     Key Vault (secrets)
         (pgconfig catalog + PostGIS)
    Standard ACR (admin creds) ──► holds the GeoServer Cloud images
-        ▲ images imported by Terraform (modules/registry, azapi importImage)
+        ▲ images imported by Terraform (infra/modules/registry, azapi importImage)
 
    * only the gateway is exposed on the environment's INTERNAL load balancer.
 ```
@@ -30,15 +30,15 @@ inside a platform-provided spoke VNet.
 
 | Concern | Resource | Module |
 | --- | --- | --- |
-| Tags / naming | Mandatory ALZ tags + name prefix | `modules/naming` |
-| Networking | Data sources over the platform VNet/subnets (RG never modified) | `modules/network` |
-| Logs | Log Analytics workspace | `modules/observability` |
-| Images | Standard ACR (admin creds, no PE) + Terraform image import | `modules/registry` |
-| Secrets | Key Vault + private endpoint + RBAC | `modules/keyvault` |
-| Catalog/data | PostgreSQL Flexible Server (pgconfig + PostGIS) + private endpoint | `modules/postgres` |
-| Runtime | Container Apps environment (internal LB) + shared user-assigned identity | `modules/container-app-environment` |
-| Event bus | RabbitMQ (Container App) | `modules/rabbitmq` |
-| Services | One Container App per GeoServer Cloud microservice | `modules/geoserver-service` |
+| Tags / naming | Mandatory ALZ tags + name prefix | `infra/modules/naming` |
+| Networking | Data sources over the platform VNet/subnets (RG never modified) | `infra/modules/network` |
+| Logs | Log Analytics workspace | `infra/modules/observability` |
+| Images | Standard ACR (admin creds, no PE) + Terraform image import | `infra/modules/registry` |
+| Secrets | Key Vault + private endpoint + RBAC | `infra/modules/keyvault` |
+| Catalog/data | PostgreSQL Flexible Server (pgconfig + PostGIS) + private endpoint | `infra/modules/postgres` |
+| Runtime | Container Apps environment (internal LB) + shared user-assigned identity | `infra/modules/container-app-environment` |
+| Event bus | RabbitMQ (Container App) | `infra/modules/rabbitmq` |
+| Services | One Container App per GeoServer Cloud microservice | `infra/modules/geoserver-service` |
 
 ## Standalone mode
 
@@ -55,8 +55,8 @@ ingress at 443 / 5672), not compose-style `name:port`.
 ## Image flow (Terraform-native)
 
 The GeoServer Cloud image set (8 OWS services + `geoserver-acl` + `rabbitmq`) is
-defined in `stack/locals.tf` (`registry_images`) from the pinned versions
-in `terraform.tfvars`, and passed to `modules/registry`. The module imports each
+defined in `infra/stack/locals.tf` (`registry_images`) from the pinned versions
+in `terraform.tfvars`, and passed to `infra/modules/registry`. The module imports each
 image into the ACR using the server-side `importImage` action via the `azapi`
 provider — equivalent to `az acr import`, but executed by `terraform apply`. The
 application modules `depends_on` the registry module, guaranteeing images exist

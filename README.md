@@ -7,7 +7,7 @@ inside the **BC Gov Azure Landing Zone (ALZ)**.
 - **Terraform** modules + a single shared stack with per-environment state &
   variables (`dev` / `test` / `prod`)
 - **GitHub Actions** with **OIDC federated identity** (no client secrets)
-- **One Bash wrapper** (`scripts/tf.sh`) that runs `terraform` identically from a
+- **One Bash wrapper** (`infra/scripts/tf.sh`) that runs `terraform` identically from a
   local machine or a GitHub Actions runner
 - **Terraform-native image sourcing** — GeoServer Cloud images are imported into
   ACR by `terraform apply` via the server-side `azapi` importImage API (no Docker
@@ -27,6 +27,17 @@ inside the **BC Gov Azure Landing Zone (ALZ)**.
 > subnet/DNS names, globally-unique resource names) must be filled in before
 > a real deploy — every placeholder is marked `REPLACE_ME` or called out in
 > [`docs/runbook.md`](docs/runbook.md).
+
+## 🤖 AI Agent Guidance
+
+This project is **AI-agent-ready**. If you're working with Claude, Copilot, Claude Code, or any AI assistant:
+
+1. **Read [`AGENTS.md`](AGENTS.md)** — Complete agent configuration, skill registry (with priority order), token optimization (RTK), and workflow examples
+2. **Use local skills** — `/opsx:propose` (new ideas), `/opsx:explore` (what's in flight), `/opsx:apply` (implement)
+3. **Follow conventions** — Spec-driven workflow; all changes start as proposals with design → specs → tasks
+4. **Respect guardrails** — Never hardcode secrets, never modify `*-networking` RGs, always validate Terraform
+
+**BC Gov patterns?** Consult [`bcgov/agent-skills`](https://github.com/bcgov/agent-skills) for ALZ, OIDC, container security, and GitHub Actions hardening guidance.
 
 ## Architecture
 
@@ -69,7 +80,7 @@ inside the **BC Gov Azure Landing Zone (ALZ)**.
 | **webui sticky sessions** | Wicket requires same-replica affinity; applied via `azapi_update_resource` PATCH (azurerm 4.x doesn't expose `stickySessions`) |
 | **Secrets never in state** | `null_resource` + `local-exec` (`az keyvault secret set`) writes secret values; KV versionless URIs are wired into ACA secrets |
 | **PostGIS init job** | Container App Job runs inside the VNet to reach the private Postgres endpoint; triggered by `terraform apply` |
-| **Deployment config** | Spring YAML files in `deployment-config/` are published to an ACA Environment Storage share mounted at `/etc/gscloud/deployment-config/` |
+| **Deployment config** | Spring YAML files in `infra/deployment-config/` are published to an ACA Environment Storage share mounted at `/etc/gscloud/deployment-config/` |
 
 ## Folder Structure
 
@@ -89,29 +100,30 @@ eo-dmi-geo-server-cloud/
 │   ├── skills/                   # OpenSpec skill definitions
 │   ├── dependabot.yml
 │   └── copilot-instructions.md
-├── scripts/
-│   └── tf.sh                     # wrapper: ./scripts/tf.sh <env> <cmd>
-├── modules/
-│   ├── naming/                   # ALZ mandatory tags + name prefix
-│   ├── network/                  # data sources over platform VNet/subnets; creates ACA + App Service subnets
-│   ├── observability/            # Log Analytics workspace
-│   ├── registry/                 # Standard ACR + server-side azapi importImage
-│   ├── keyvault/                 # Key Vault + private endpoint + RBAC
-│   ├── postgres/                 # PostgreSQL Flexible Server + private endpoint + DB init
-│   ├── container-app-environment/# ACA environment (internal LB) + UAMI
-│   ├── rabbitmq/                 # RabbitMQ event bus (Container App, durable Azure File share)
-│   └── geoserver-service/        # reusable module for every GeoServer Cloud microservice
-├── stack/                        # single shared Terraform stack for all environments
-│   ├── main.tf                   # all resources: modules + null_resources for secrets/jobs
-│   ├── locals.tf                 # services map, image list, shared env/secrets
-│   ├── variables.tf              # all inputs (injected via TF_VAR_* in CI/CD)
-│   ├── outputs.tf
-│   ├── rabbitmq-storage.tf       # Azure Storage account + file share for RabbitMQ data
-│   └── backend.tf / providers.tf / versions.tf / data.tf
-├── deployment-config/            # Spring YAML files published to ACA storage
-│   ├── gateway.yml / gateway-webflux.yml
-│   ├── geoserver.yml / geoserver_spring.yml / geoserver_logging.yml
-│   └── jndi.yml
+├── infra/                        # all infrastructure-as-code artifacts
+│   ├── scripts/
+│   │   └── tf.sh                 # wrapper: ./infra/scripts/tf.sh <env> <cmd>
+│   ├── modules/
+│   │   ├── naming/               # ALZ mandatory tags + name prefix
+│   │   ├── network/              # data sources over platform VNet/subnets; creates ACA + App Service subnets
+│   │   ├── observability/        # Log Analytics workspace
+│   │   ├── registry/             # Standard ACR + server-side azapi importImage
+│   │   ├── keyvault/             # Key Vault + private endpoint + RBAC
+│   │   ├── postgres/             # PostgreSQL Flexible Server + private endpoint + DB init
+│   │   ├── container-app-environment/ # ACA environment (internal LB) + UAMI
+│   │   ├── rabbitmq/             # RabbitMQ event bus (Container App, durable Azure File share)
+│   │   └── geoserver-service/    # reusable module for every GeoServer Cloud microservice
+│   ├── stack/                    # single shared Terraform stack for all environments
+│   │   ├── main.tf               # all resources: modules + null_resources for secrets/jobs
+│   │   ├── locals.tf             # services map, image list, shared env/secrets
+│   │   ├── variables.tf          # all inputs (injected via TF_VAR_* in CI/CD)
+│   │   ├── outputs.tf
+│   │   ├── rabbitmq-storage.tf   # Azure Storage account + file share for RabbitMQ data
+│   │   └── backend.tf / providers.tf / versions.tf / data.tf
+│   └── deployment-config/        # Spring YAML files published to ACA storage
+│       ├── gateway.yml / gateway-webflux.yml
+│       ├── geoserver.yml / geoserver_spring.yml / geoserver_logging.yml
+│       └── jndi.yml
 ├── node-oidc-proxy/              # public-facing OIDC edge proxy (TypeScript, Node 24)
 │   ├── src/                      # config · logger · jwe · session · oidc · proxy · app · server
 │   ├── Dockerfile                # multi-stage, non-root, HEALTHCHECK
@@ -135,7 +147,7 @@ eo-dmi-geo-server-cloud/
     └── node-oidc-proxy-contract.md
 ```
 
-All environments share a single `stack/` directory. Environment identity, resource
+All environments share a single `infra/stack/` directory. Environment identity, resource
 names, and Terraform backend config are injected at runtime via `TF_VAR_*` /
 `TFSTATE_*` env vars set per GitHub Environment.
 
@@ -161,7 +173,7 @@ VNet with a delegated ACA subnet + a private-endpoint subnet).
 # 0. Install tools
 mise install
 
-# 1. Fill in stack/terraform.tfvars (REPLACE_ME values).
+# 1. Fill in infra/stack/terraform.tfvars (REPLACE_ME values).
 
 # 2. One-time: create the managed identity, GitHub OIDC federated credential,
 #    and the Terraform state storage account using the BC Gov platform script:
@@ -175,9 +187,9 @@ chmod +x initial-azure-setup.sh
   --create-storage --create-github-secrets
 
 # 3. Initialize, plan, apply.
-./scripts/tf.sh dev init
-./scripts/tf.sh dev plan
-./scripts/tf.sh dev apply
+./infra/scripts/tf.sh dev init
+./infra/scripts/tf.sh dev plan
+./infra/scripts/tf.sh dev apply
 
 # 4. (Optional) Validate the GeoServer catalog offline
 pip install -e geo-server-app-config/
@@ -244,7 +256,7 @@ See [`node-oidc-proxy/README.md`](node-oidc-proxy/README.md) and
   integration).
 - **Private endpoints + private DNS** for PostgreSQL and Key Vault.
 - **Mandatory tags** on every resource (`account_coding`, `billing_group`,
-  `ministry_name`, `environment`, `owner`) via `modules/naming`.
+  `ministry_name`, `environment`, `owner`) via `infra/modules/naming`.
 - **OIDC-only** auth for Terraform state and deployments; `prevent_destroy` on
   stateful resources.
 - **Secrets never in Terraform state** — written to Key Vault via `az keyvault
@@ -254,7 +266,7 @@ See [`node-oidc-proxy/README.md`](node-oidc-proxy/README.md) and
 
 This project uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for
 structured, AI-assisted planning. The `/opsx:*` slash commands are available in
-GitHub Copilot chat.
+GitHub Copilot chat and other AI agents.
 
 ```text
 /opsx:explore          # investigate before committing to a change
@@ -263,9 +275,12 @@ GitHub Copilot chat.
 /opsx:archive          # merge delta specs into openspec/specs/ and file away
 ```
 
-Source-of-truth specs: `openspec/specs/`  
-In-flight changes: `openspec/changes/`  
-Project config: `openspec/config.yaml`
+**Source of truth**
+- Specs: `openspec/specs/` (accumulate on archive)
+- In-flight changes: `openspec/changes/` (one folder per change)
+- Project config: `openspec/config.yaml` (context, rules, artifact templates)
+
+**For agents:** Full skill documentation, priority order, and workflow examples are in [`AGENTS.md`](AGENTS.md). All skills are defined in `.github/skills/`.
 
 See [`docs/runbook.md`](docs/runbook.md) for setup, deploy order, GeoServer
 Cloud app wiring, and bootstrap-vs-hardened tradeoffs.

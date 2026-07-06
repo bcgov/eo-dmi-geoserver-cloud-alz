@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# scripts/tf.sh
+# infra/scripts/tf.sh
 # Single, self-contained entry point for all Terraform operations.
-# All environments share the single stack/ directory; environment identity and
+# All environments share the single infra/stack/ directory; environment identity and
 # resource names are injected at runtime via TF_VAR_* env vars set per GitHub
 # Environment. Backend state is isolated per environment via TFSTATE_KEY.
 #
 # Usage:
-#   ./scripts/tf.sh <dev|test|prod> <command> [extra terraform args...]
+#   ./infra/scripts/tf.sh <dev|test|prod> <command> [extra terraform args...]
 #
 # Commands:
 #   init      terraform init with backend config from TFSTATE_* env vars
@@ -19,9 +19,9 @@
 #   <other>   passed through to terraform verbatim
 #
 # Examples:
-#   ./scripts/tf.sh dev plan
-#   ./scripts/tf.sh prod apply
-#   ./scripts/tf.sh dev plan -var='service_max_replicas=4'
+#   ./infra/scripts/tf.sh dev plan
+#   ./infra/scripts/tf.sh prod apply
+#   ./infra/scripts/tf.sh dev plan -var='service_max_replicas=4'
 #
 # Backend resolution (TFSTATE_* env vars, set in GitHub Environment Variables):
 #   TFSTATE_RESOURCE_GROUP   (default: rg-geoserver-tfstate-<env>)
@@ -46,7 +46,7 @@ PLAN_FILE="tfplan"
 VALID_ENVS=("dev" "test" "prod" "tools")
 
 # Repo root, resolved relative to this script regardless of caller CWD.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export REPO_ROOT
 
 # --- logging ----------------------------------------------------------------
@@ -121,9 +121,9 @@ backend_key()             { echo "${TFSTATE_KEY:-geoserver-cloud/${1}.tfstate}";
 # --- helpers ----------------------------------------------------------------
 usage() {
   cat >&2 <<'EOF'
-Usage: ./scripts/tf.sh <dev|test|prod|tools> <command> [extra terraform args...]
+Usage: ./infra/scripts/tf.sh <dev|test|prod|tools> <command> [extra terraform args...]
 
-All environments share stack/. Environment-specific values are injected via
+All environments share infra/stack/. Environment-specific values are injected via
 TF_VAR_* env vars set per GitHub Environment (or exported locally).
 
 Commands:
@@ -140,7 +140,7 @@ EOF
 }
 
 # All environments share a single stack directory.
-stack_dir() { echo "${REPO_ROOT}/stack"; }
+stack_dir() { echo "${REPO_ROOT}/infra/stack"; }
 
 # Run `terraform init` with backend values injected via -backend-config.
 tf_init() {

@@ -55,7 +55,7 @@ Run it **once per environment** (`dev`, `test`, `prod`).
 
 ### Wiring the state backend into `tf.sh`
 
-`scripts/tf.sh` injects the backend config at `init` time from `TFSTATE_*`
+`infra/scripts/tf.sh` injects the backend config at `init` time from `TFSTATE_*`
 variables (falling back to a default convention). Point them at the storage
 account the bootstrap script created — locally via `export`, or in CI as repo /
 environment GitHub Variables:
@@ -72,25 +72,25 @@ State auth is AzureAD/OIDC (`use_azuread_auth=true`) — no storage access keys.
 ## 3. Deploy
 
 ```bash
-# Fill REPLACE_ME values in stack/terraform.tfvars first.
-./scripts/tf.sh dev init
-./scripts/tf.sh dev plan
-./scripts/tf.sh dev apply
+# Fill REPLACE_ME values in infra/stack/terraform.tfvars first.
+./infra/scripts/tf.sh dev init
+./infra/scripts/tf.sh dev plan
+./infra/scripts/tf.sh dev apply
 ```
 
 `apply` is a **single pass**:
 
 1. Resource group, Log Analytics, and the **ACR** are created.
 2. Terraform **imports the GeoServer Cloud images** into the ACR via the
-   server-side `importImage` action (`modules/registry`, `azapi`) — no Docker
+   server-side `importImage` action (`infra/modules/registry`, `azapi`) — no Docker
    daemon, no `az acr import`.
 3. Key Vault, PostgreSQL, RabbitMQ, ACL, and the OWS Container Apps come up. The
    app modules `depends_on` the registry module, so they never start before
    their images exist.
 
-The image set and pinned tags live in `stack/terraform.tfvars`
+The image set and pinned tags live in `infra/stack/terraform.tfvars`
 (`gs_cloud_version`, `acl_version`, `rabbitmq_image_tag`) and are expanded into
-the import list in `stack/locals.tf` (`registry_images`). To change a
+the import list in `infra/stack/locals.tf` (`registry_images`). To change a
 version, edit the tfvars and re-apply — the import is idempotent (`mode=Force`).
 
 ### CI/CD
@@ -123,7 +123,7 @@ Microsoft-hosted CI runner. Tighten these for production:
 ## 5. Teardown
 
 ```bash
-./scripts/tf.sh dev destroy
+./infra/scripts/tf.sh dev destroy
 ```
 
 Stateful resources (Key Vault, PostgreSQL) use `prevent_destroy` and the

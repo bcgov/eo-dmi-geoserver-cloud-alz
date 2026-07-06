@@ -5,7 +5,7 @@ context: |
   Repo: bcgov/eo-dmi-geoserver-cloud-alz
 
   Tech stack:
-    - Terraform (>=1.15) for all infrastructure (modules/ + stack/)
+    - Terraform (>=1.15) for all infrastructure (infra/modules/ + infra/stack/)
     - Python 3.14 + Typer + Pydantic v2 for catalog-as-code (geo-server-app-config/)
     - GitHub Actions with OIDC federated identity (no client secrets)
     - Azure Container Apps (internal LB, workload profiles)
@@ -16,7 +16,7 @@ context: |
     - GeoServer ACL authorization service
 
   Architecture patterns:
-    - Single Terraform stack/ per environment; env identity injected via TF_VAR_* / TFSTATE_* env vars
+    - Single Terraform infra/stack/ per environment; env identity injected via TF_VAR_* / TFSTATE_* env vars
     - Catalog-as-code: geo-server-app-config/ reconciles YAML => GeoServer REST API
     - Reusable geoserver-service Terraform module for every GeoServer Cloud microservice
     - No public IPs; gateway is the only egress point on the internal LB
@@ -25,8 +25,8 @@ context: |
 
   Conventions:
     - Conventional Commits (enforced on PR title by amannn/action-semantic-pull-request)
-    - Terraform naming/tagging via modules/naming/ (BC Gov ALZ mandatory tags)
-    - All environments share stack/; never modify platform *-networking resource groups
+    - Terraform naming/tagging via infra/modules/naming/ (BC Gov ALZ mandatory tags)
+    - All environments share infra/stack/; never modify platform *-networking resource groups
     - Private endpoints + private DNS for PostgreSQL and Key Vault
     - OIDC-only auth for Terraform state and deployments
 

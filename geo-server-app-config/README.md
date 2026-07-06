@@ -5,7 +5,7 @@ Azure Container Apps (BC Gov ALZ). Drives the Gateway REST API to converge
 workspaces, datastores, feature types, styles, layer groups, and ACL rules
 against the YAML in `catalog/`.
 
-Pairs with the Terraform stack in `../stack/` — Terraform owns the platform,
+Pairs with the Terraform stack in `../infra/stack/` — Terraform owns the platform,
 this tool owns the application's domain model.
 
 ## Layout
@@ -45,7 +45,7 @@ geoserver-apply run dev
 Secrets are resolved at apply time:
 
 - `kv://<vault>/<secret>`  -> Azure Key Vault via `DefaultAzureCredential`
-- `tf://<output>`          -> `terraform -chdir=../stack output <name>`
+- `tf://<output>`          -> `terraform -chdir=../infra/stack output <name>`
 
 No string interpolation, no Jinja, no Helm-style templating. The YAML is
 validated by Pydantic *before* any resolver runs.
