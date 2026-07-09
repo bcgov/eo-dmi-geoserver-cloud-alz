@@ -130,7 +130,9 @@ def apply(
                 stats["err"] += 1
 
     for r in bundle.acl_rules:
-        print(f"[acl]    p={r.priority} role={r.role} {r.workspace}:{r.layer} -> {r.access}")
+        principal = f"role={r.role}" if r.role else f"username={r.username}"
+        scope = f"{r.service}/{r.request}" if r.service or r.request else "any-op"
+        print(f"[acl]    p={r.priority} {principal} {r.workspace}:{r.layer} [{scope}] -> {r.access}")
         if not dry_run:
             if gs.acl_client is None:
                 print(f"[warn]   no ACL service configured - skipping {len(bundle.acl_rules)} rule(s)")

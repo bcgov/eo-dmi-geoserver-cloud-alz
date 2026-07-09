@@ -31,7 +31,7 @@ import pytest
 # Constants
 # ---------------------------------------------------------------------------
 _REPO_ROOT = Path(__file__).parent.parent
-_STACK_DIR = _REPO_ROOT / "stack"
+_STACK_DIR = _REPO_ROOT / "infra" / "stack"
 
 SOCKS5_PORT = int(os.getenv("SOCKS5_PORT", "8228"))
 _SOCKS_URL = f"socks5://127.0.0.1:{SOCKS5_PORT}"
@@ -123,7 +123,7 @@ def _tf_output(key: str) -> str:
         pytest.exit(
             f"`terraform output -raw {key}` failed.\n"
             f"  stderr: {result.stderr.strip()}\n"
-            "  Run `terraform init` from stack/ if state is not initialised.",
+            "  Run `terraform init` from infra/stack/ if state is not initialised.",
             returncode=3,
         )
     value = result.stdout.strip()
@@ -251,3 +251,34 @@ def proxy_client(proxy_app_url: str) -> httpx.Client:
     """httpx client for the public OIDC proxy App Service (TLS verified)."""
     with _make_client(proxy_app_url, verify=True) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def machine_client_username() -> str:
+    """Username of the machine/API client to exercise in these tests.
+
+    Terraform's var.machine_client_usernames provisions one authentication
+    identity (user + authkey) per named machine client — this fixture picks
+    one to test against. Defaults to "svc-machine-wildlife", matching both
+    the Terraform default and the username-scoped rule in
+    geo-server-app-config/catalog/acl_rules.yaml. Set
+    MACHINE_CLIENT_TEST_USERNAME="" to skip these tests (e.g. an environment
+    that provisions no machine clients at all).
+    """
+    name = os.getenv("MACHINE_CLIENT_TEST_USERNAME", "svc-machine-wildlife")
+    if not name:
+        pytest.skip(
+            "MACHINE_CLIENT_TEST_USERNAME set to empty — authkey machine-client "
+            "tests disabled for this environment."
+        )
+    return name
+
+
+@pytest.fixture(scope="session")
+def machine_client_authkey(kv_name: str, machine_client_username: str) -> str:
+    """The authkey for `machine_client_username` — one Key Vault secret per
+    username ("geoserver-machine-authkey-<username>"), since authentication is
+    now provisioned per machine client rather than a single shared secret."""
+    if key := os.getenv("MACHINE_CLIENT_AUTHKEY"):
+        return key
+    return _fetch_kv_secret(kv_name, f"geoserver-machine-authkey-{machine_client_username}")

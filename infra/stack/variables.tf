@@ -273,6 +273,23 @@ variable "admin_idir_principal" {
   default     = "omprakash.2.mishra@gov.bc.ca"
 }
 
+variable "machine_client_usernames" {
+  type        = list(string)
+  description = <<-EOT
+    Service-account usernames for GeoServer's authkey filter (machine/API clients).
+    One entry per workspace/dataset consumer — each gets its own generated key
+    (Key Vault secret "geoserver-machine-authkey-<username>") via
+    configure-geoserver-security.sh step 6. This variable provisions
+    AUTHENTICATION ONLY (the user + its key). AUTHORIZATION (which workspace/layer
+    that username can read or write) is deliberately NOT here — it's defined as a
+    username-scoped rule in geo-server-app-config/catalog/acl_rules.yaml, reconciled
+    via `geoserver-apply run <env>`, so one client's grant can never be widened by a
+    shared role that other machine clients also hold. Empty list skips authkey setup
+    entirely.
+  EOT
+  default     = ["svc-machine-wildlife"]
+}
+
 # ---------------------------------------------------------------------------
 # Private endpoint DNS wait (BC Gov platform policy registers zone groups async)
 # ---------------------------------------------------------------------------

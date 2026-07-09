@@ -1,11 +1,42 @@
+# Priority: lower number = evaluated first / higher precedence (geoserver-acl /
+# GeoFence convention). Rules here MUST be ordered specific-allow -> narrow-deny ->
+# broad-allow, because every principal here also holds ROLE_AUTHENTICATED (GeoServer's
+# implicit "any logged-in user" role) — so an editor's or machine client's WFS-T
+# Transaction request also matches the broad ROLE_AUTHENTICATED rules below, and would
+# be denied by the priority-18 rule if the priority-5/15 ALLOW rules weren't evaluated
+# first. Without the priority-18 DENY, a plain ROLE_AUTHENTICATED user (no editor role,
+# no machine authkey) would get access=READ from priority-20 with no service/request
+# scoping — which geoserver-acl would apply to a WFS-T Transaction just as readily as
+# to a GetFeature, since ALLOW is ALLOW once a rule matches. See
+# openspec/changes/scope-machine-client-authkeys/design.md Risks for the analysis.
 acl_rules:
-  - priority: 10
-    role: ROLE_AUTHENTICATED
+  # Machine/API client (GeoServer authkey identity, provisioned by
+  # infra/scripts/configure-geoserver-security.sh + var.machine_client_usernames).
+  # Scoped by username, not role, so this one client's grant can't be widened
+  # by — or accidentally reused via — a shared role that other clients also hold.
+  # One rule per machine client per workspace/dataset it needs; add more below
+  # rather than broadening this one's workspace/layer.
+  - priority: 5
+    username: svc-machine-wildlife
     workspace: wildlife
     layer: "*"
-    access: READ
-  - priority: 20
+    access: WRITE
+  - priority: 15
     role: ROLE_WILDLIFE_EDITOR
     workspace: wildlife
     layer: "*"
     access: WRITE
+  # Blocks WFS-T writes for every OTHER authenticated principal before the broad
+  # READ rule below (which has no service/request scoping) would otherwise match.
+  - priority: 18
+    role: ROLE_AUTHENTICATED
+    workspace: wildlife
+    layer: "*"
+    service: WFS
+    request: Transaction
+    access: DENY
+  - priority: 20
+    role: ROLE_AUTHENTICATED
+    workspace: wildlife
+    layer: "*"
+    access: READ

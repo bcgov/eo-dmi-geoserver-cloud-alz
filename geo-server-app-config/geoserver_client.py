@@ -179,7 +179,14 @@ class GeoServerClient:
     def ensure_acl_rule(self, rule: dict) -> None:
         """Ensure an ACL data-access rule exists on the geoserver-acl service (idempotent).
 
-        rule: {priority, role, workspace, layer, access}
+        rule: {priority, workspace, layer, access} plus exactly one of {role, username},
+        plus optional {service, request}. `username` scopes a rule to one specific
+        principal (e.g. a machine/API client's authkey identity) instead of every holder
+        of a role — required for per-workspace machine clients so one client's key can't
+        be broadened by a shared role grant. `service`/`request` scope a rule to one OWS
+        operation (e.g. service="WFS", request="Transaction") instead of every operation
+        on the workspace/layer — required so a broad READ rule can't also match a WFS-T
+        write request that a separate, more specific rule is meant to gate.
         Uses the geoserver-acl REST API (flat Rule DTO, base path {acl_base}/rules):
           GET /rules, POST /rules, PATCH /rules/id/{id}.
         Access values READ/WRITE/ADMIN/DENY map to ALLOW/DENY. The catalog's "*" layer
@@ -193,25 +200,52 @@ class GeoServerClient:
         layer = rule.get("layer")
         if layer == "*":
             layer = None
+        role = rule.get("role")
+        username = rule.get("username")
+        # geoserver-acl uppercases and stores these regardless of input casing (e.g.
+        # "Transaction" round-trips as "TRANSACTION"); normalize before sending and
+        # before comparing against GET results, or dedup silently fails to match an
+        # existing rule and re-POSTs into the same priority, causing a 409 Conflict.
+        service = rule.get("service")
+        service = service.upper() if service else service
+        request = rule.get("request")
+        request = request.upper() if request else request
 
         payload = {
             "priority": rule["priority"],
             "access": grant,
-            "role": rule["role"],
             "workspace": rule["workspace"],
         }
+        if username:
+            # geoserver-acl's Rule DTO calls this field "user" on the wire (its own
+            # OpenAPI model), even though our catalog schema calls it "username" to
+            # match GeoServer's own terminology — see
+            # https://github.com/geoserver/geoserver-acl web-api Rule.java.
+            payload["user"] = username
+        else:
+            payload["role"] = role
         if layer is not None:
             payload["layer"] = layer
+        if service is not None:
+            payload["service"] = service
+        if request is not None:
+            payload["request"] = request
 
         # GET /rules returns the full flat JSON array (no pagination wrapper); find any
-        # existing rule with the same identifying criteria (role, workspace, layer).
+        # existing rule with the same identifying criteria (role/username, workspace,
+        # layer, service, request) — service/request must participate in the match so a
+        # narrow Transaction-only rule is never mistaken for (or overwrites) a broader
+        # rule on the same role/workspace/layer.
         resp = self.acl_client.get(f"{self.acl_base}/rules")
         resp.raise_for_status()
         existing = [
             r for r in resp.json()
-            if r.get("role") == rule["role"]
+            if r.get("role") == role
+            and r.get("user") == username
             and r.get("workspace") == rule["workspace"]
             and r.get("layer") == layer
+            and r.get("service") == service
+            and r.get("request") == request
         ]
 
         if existing:

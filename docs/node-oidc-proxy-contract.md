@@ -88,6 +88,30 @@ Evaluate in order:
 3. Browser request (`Accept` contains `text/html`) → `302 /auth/login?returnTo=<original-url>`.
 4. Otherwise (API/XHR) → `401` with `WWW-Authenticate: Bearer` (no redirect).
 
+> **Auth-key scope, and does it support writes?** GeoServer's authkey module is wired (by
+> `infra/scripts/configure-geoserver-security.sh`, step 6) into the `default` (OWS: WMS/WFS/WCS/WPS)
+> and `gwc` filter chains only — never `web` or `rest`. This matches GeoServer's own documented
+> limitation: authkey "is meant to be used with OGC services... it won't work properly against the
+> administration GUI, nor RESTConfig." Practically: an `?authkey=<key>` request **can** perform a
+> WFS-T write (or any OWS write operation) exactly as far as **geoserver-acl** — a separate, DB-backed
+> authorization microservice, not GeoServer's own role system — permits for that specific resolved
+> username. Authentication and authorization are deliberately split across two systems here:
+>
+> - **Authentication** (who is this?): `var.machine_client_usernames` (Terraform) + this script
+>   provision one authkey identity per machine/API client. This is identity only — it grants no
+>   access by itself, and this script never associates roles with these users.
+> - **Authorization** (what can they do?): `geo-server-app-config/catalog/acl_rules.yaml` defines a
+>   `username`-scoped rule per machine client (e.g. `username: svc-machine-wildlife`, `workspace:
+>   wildlife`, `access: WRITE`), reconciled into geoserver-acl via `geoserver-apply run <env>`. Scoping
+>   by `username` — instead of a shared `role` every other machine client might also hold — means one
+>   client's grant is confined to exactly the workspace/dataset its rule names; a second machine
+>   client with its own `username` rule can be scoped to a different workspace entirely.
+>
+> It **cannot** authenticate against `/rest/...` (catalog/config management) or `/web/...` (admin GUI)
+> — those endpoints ignore the authkey param and fall through to anonymous/401, regardless of what
+> geoserver-acl would have permitted. A caller needing REST-config writes must use Basic auth against
+> a real user or an OIDC session.
+
 ## 6. Session cookie (stateless)
 
 - Name: `${SESSION_COOKIE_NAME}` (default `gs_sso`), distinct from `JSESSIONID`.
@@ -187,6 +211,12 @@ CMD ["node", "dist/server.js"]
   so only the App Service can reach it.
 - GeoServer: request-header pre-auth filter reading `sec-username` (fall-through to local admin),
   JDBC role service (Postgres), `auth-key` extension, ACL.
+- GeoServer `authkey` filter (`default`+`gwc` chains only) plus one machine-client user and key
+  per entry in `var.machine_client_usernames`, provisioned end-to-end by
+  `configure-geoserver-security.sh` step 6 and `null_resource.secret_geoserver_machine_authkey`
+  (`for_each` over usernames) — authentication only, see §5 above for the OGC-only / no-REST-write
+  scope. Authorization for each username is a separate concern, owned entirely by
+  `geo-server-app-config/catalog/acl_rules.yaml` (username-scoped ACL rules), not by Terraform.
 
 ## 12. What you must register in Keycloak (client `eo-dmi-geoserver-cloud-alz-6502`)
 
