@@ -832,6 +832,45 @@ resource "null_resource" "secret_geoserver_admin_password" {
   depends_on = [module.keyvault]
 }
 
+# One auth-key per machine/API client — generate once each, skip if already exists.
+# Consumed only by configure-geoserver-security.sh (fetched there via az CLI,
+# same as ADMIN_PASS) to populate GeoServer's authkeys.properties; never
+# passed through a Terraform variable, so the value never touches state.
+# Authorization for each username is defined separately as a username-scoped
+# rule in geo-server-app-config/catalog/acl_rules.yaml — this resource only
+# provisions the credential, never what it's allowed to access.
+resource "null_resource" "secret_geoserver_machine_authkey" {
+  for_each = toset(var.machine_client_usernames)
+
+  triggers = {
+    key_vault_id = module.keyvault.id
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      KV_NAME      = var.key_vault_name
+      SECRET_NAME  = "geoserver-machine-authkey-${each.key}"
+      CONTENT_TYPE = "GeoServer authkey for machine/API client '${each.key}' (OWS/GWC only)"
+    }
+    command = <<-EOT
+      az keyvault secret show \
+        --vault-name "$KV_NAME" \
+        --name "$SECRET_NAME" \
+        --query id -o tsv 2>/dev/null \
+      || az keyvault secret set \
+        --vault-name "$KV_NAME" \
+        --name "$SECRET_NAME" \
+        --value "$(openssl rand -hex 32)" \
+        --content-type "$CONTENT_TYPE" \
+        --expires "$(date -u -d '+89 days' +%Y-%m-%dT%H:%M:%SZ)" \
+        -o none
+    EOT
+  }
+
+  depends_on = [module.keyvault]
+}
+
 # ---------------------------------------------------------------------------
 # JDBC role service schema initialisation
 # Creates GeoServer's role-service tables in a dedicated gssec schema inside the
@@ -1110,9 +1149,10 @@ resource "null_resource" "run_gsroles_init" {
 # ---------------------------------------------------------------------------
 resource "null_resource" "configure_geoserver_security" {
   triggers = {
-    gateway_id   = module.service["gateway"].id
-    admin_secret = null_resource.secret_geoserver_admin_password.id
-    gsroles_init = null_resource.run_gsroles_init.id
+    gateway_id      = module.service["gateway"].id
+    admin_secret    = null_resource.secret_geoserver_admin_password.id
+    machine_secrets = join(",", [for r in null_resource.secret_geoserver_machine_authkey : r.id])
+    gsroles_init    = null_resource.run_gsroles_init.id
     # Re-apply when the security-config script changes.
     script_sha = filesha256("${path.module}/../scripts/configure-geoserver-security.sh")
   }
@@ -1120,9 +1160,11 @@ resource "null_resource" "configure_geoserver_security" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     environment = {
-      KV_NAME         = var.key_vault_name
-      GATEWAY_URL     = local.gateway_internal
-      ADMIN_PRINCIPAL = var.admin_idir_principal
+      KV_NAME                  = var.key_vault_name
+      GATEWAY_URL              = local.gateway_internal
+      ADMIN_PRINCIPAL          = var.admin_idir_principal
+      MACHINE_CLIENT_USERNAMES = join(",", var.machine_client_usernames)
+      RESOURCE_GROUP           = azurerm_resource_group.this.name
     }
     command = "bash '${path.module}/../scripts/configure-geoserver-security.sh'"
   }
@@ -1131,6 +1173,7 @@ resource "null_resource" "configure_geoserver_security" {
     module.service,
     null_resource.run_gsroles_init,
     null_resource.secret_geoserver_admin_password,
+    null_resource.secret_geoserver_machine_authkey,
     azapi_update_resource.webui_sticky_sessions,
   ]
 }

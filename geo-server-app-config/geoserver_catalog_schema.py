@@ -4,7 +4,7 @@ Validation runs BEFORE any secret/output resolver, so typos and shape
 errors are caught locally and in CI — long before we hit the Gateway.
 """
 from __future__ import annotations
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 from typing import List, Optional, Literal
 
 
@@ -58,11 +58,41 @@ class LayerGroup(BaseModel):
 
 
 class AclRule(BaseModel):
+    """A geoserver-acl data-access rule.
+
+    Scope by exactly one of `role` (applies to every principal holding that
+    role — e.g. every IDIR user via OIDC) or `username` (applies to one
+    specific principal — e.g. one machine/API client's authkey identity, so
+    it can be scoped to a single workspace/layer without granting a shared
+    role to every other machine client).
+
+    `service`/`request` narrow which OWS operation a rule matches (e.g.
+    service="WFS", request="Transaction"). Left unset, a rule matches every
+    OWS operation for its workspace/layer — which is why a broad `READ` rule
+    for a role like `ROLE_AUTHENTICATED` must never be left unscoped if a
+    more specific `WRITE` rule (role or username) also grants that same
+    workspace: without `service`/`request` narrowing, geoserver-acl has no
+    signal that distinguishes a read-only OWS request from a WFS-T
+    Transaction, so `access` alone does not enforce read-vs-write.
+    """
+
     priority: int
-    role: str
+    role: Optional[str] = None
+    username: Optional[str] = None
     workspace: str
     layer: str = "*"
+    service: Optional[str] = None
+    request: Optional[str] = None
     access: Literal["READ", "WRITE", "ADMIN", "DENY"]
+
+    @model_validator(mode="after")
+    def _exactly_one_principal(self) -> "AclRule":
+        if bool(self.role) == bool(self.username):
+            raise ValueError(
+                f"ACL rule p={self.priority} must set exactly one of role/username, "
+                f"got role={self.role!r} username={self.username!r}"
+            )
+        return self
 
 
 class CatalogBundle(BaseModel):
