@@ -31,6 +31,8 @@
 #
 # Terraform variable injection:
 #   Set TF_VAR_* in your GitHub Environment Variables (or export locally).
+#   Set OIDC_CLIENT_SECRET as an environment secret for apply; it is written to
+#   Key Vault by local-exec and is intentionally not a Terraform variable.
 #   Required: TF_VAR_environment, TF_VAR_resource_group_name, TF_VAR_acr_name,
 #             TF_VAR_key_vault_name, TF_VAR_postgres_server_name,
 #             TF_VAR_vnet_name, TF_VAR_vnet_resource_group_name,
@@ -79,6 +81,12 @@ require_cmd() {
   for cmd in "$@"; do
     command -v "${cmd}" >/dev/null 2>&1 || die "required command not found on PATH: ${cmd}"
   done
+}
+
+# The OIDC client secret is deliberately read from the process environment, not
+# from a Terraform variable, so its value cannot enter Terraform state.
+require_oidc_client_secret() {
+  [[ -n "${OIDC_CLIENT_SECRET:-}" ]] || die "OIDC_CLIENT_SECRET environment variable is required for Terraform apply"
 }
 
 # --- Azure auth context -----------------------------------------------------
@@ -161,6 +169,7 @@ main() {
   require_env "${env}"
   [[ -n "${cmd}" ]] || die "a terraform command is required (init|fmt|validate|plan|apply|destroy|...)"
   shift 2 || true
+  [[ "${cmd}" == "apply" ]] && require_oidc_client_secret
   require_cmd terraform
   configure_azure_auth
 

@@ -41,7 +41,7 @@ This project is **AI-agent-ready**. If you're working with Claude, Copilot, Clau
 
 ## Architecture
 
-```
+```text
   Internet
      │
      ▼
@@ -72,7 +72,7 @@ This project is **AI-agent-ready**. If you're working with Claude, Copilot, Clau
 ### Key design decisions
 
 | Decision | Detail |
-|----------|--------|
+| --- | --- |
 | **Standalone mode** | `pgconfig` catalog backend + `standalone` Spring profile; no Consul / Spring Cloud Config Server needed |
 | **Internal LB only** | ACA environment has no public IP; only `gateway` has `external = true` ingress (reachable over VNet / SOCKS5) |
 | **RabbitMQ always warm** | `min_replicas = 1` — TCP ingress has no scale trigger; at 0, auto-delete queues are lost and catalog events stop |
@@ -84,10 +84,10 @@ This project is **AI-agent-ready**. If you're working with Claude, Copilot, Clau
 
 ## Folder Structure
 
-```
+```text
 eo-dmi-geo-server-cloud/
 ├── README.md
-├── mise.toml                     # pinned tool versions: tf 1.15.7 · node 24 · python 3.14
+├── mise.toml                     # pinned tool versions: tf 1.15.8 · node 24 · python 3.14
 ├── .gitignore  .editorconfig  .tflint.hcl  .checkov.yaml
 ├── .github/
 │   ├── workflows/
@@ -154,14 +154,14 @@ names, and Terraform backend config are injected at runtime via `TF_VAR_*` /
 ## Tool versions (from `mise.toml`)
 
 | Tool | Version |
-|------|---------|
-| Terraform | 1.15.7 |
+| --- | --- |
+| Terraform | 1.15.8 |
 | Node.js | 24 |
 | Python | 3.14 |
-| TFLint | 0.63.1 |
-| uv | 0.10.11 |
-| Checkov | 3.3.2 (env var) |
-| TFLint azurerm ruleset | 0.28.0 (env var) |
+| TFLint | 0.64.0 |
+| uv | 0.12.5 |
+| Checkov | 3.3.11 (env var) |
+| TFLint azurerm ruleset | 0.32.0 (env var) |
 
 ## Quick Start
 
@@ -202,7 +202,7 @@ federated identity and read config from GitHub **Variables** set per Environment
 ## GitHub Actions workflows
 
 | Workflow | Trigger | What it does |
-|----------|---------|--------------|
+| --- | --- | --- |
 | `ci.yml` | PR → `main` | fork-gate, PR title lint (Conventional Commits), `terraform plan` against `tools` env |
 | `cd-dev.yml` | push `main` or dispatch | `terraform apply` → `dev` |
 | `cd-test.yml` | dispatch | `terraform apply` → `test` (gated) |
@@ -222,7 +222,7 @@ geoserver-apply run dev
 The catalog YAML files live under `geo-server-app-config/catalog/`:
 
 | File | Resources |
-|------|-----------|
+| --- | --- |
 | `workspaces.yaml` | GeoServer workspaces + namespace URIs |
 | `stores.yaml` | PostGIS datastore connections |
 | `layers.yaml` | Feature type / layer definitions |
@@ -237,15 +237,36 @@ and are resolved at runtime — never hardcoded.
 ## Node OIDC Edge Proxy (`node-oidc-proxy/`)
 
 A stateless TypeScript / Express 5 / Node 24 public-facing proxy that:
+
 - Runs the BC Gov Keycloak OIDC Authorization Code + PKCE flow
 - Seals the session into a `JWE` cookie (no server-side session store)
-- Injects `sec-username` into every proxied request; strips `sec-*` / `x-gsc-*`
+- Injects trusted `sec-username` and `sec-roles` headers into authenticated
+  requests; strips `sec-*` / `x-gsc-*`
   anti-spoofing headers from inbound traffic
 - Deployed as an Azure App Service (VNet-integrated) built by `az acr build`
   during `terraform apply`
 
 See [`node-oidc-proxy/README.md`](node-oidc-proxy/README.md) and
 [`docs/node-oidc-proxy-contract.md`](docs/node-oidc-proxy-contract.md).
+
+## Documentation Map
+
+| Topic | Guide |
+| --- | --- |
+| Architecture and topology | [`docs/architecture.md`](docs/architecture.md) |
+| Deployment and validation | [`docs/operations-guide.md`](docs/operations-guide.md) and [`docs/runbook.md`](docs/runbook.md) |
+| Security and identity | [`docs/security-and-identity.md`](docs/security-and-identity.md) |
+| Proxy contract | [`docs/node-oidc-proxy-contract.md`](docs/node-oidc-proxy-contract.md) |
+| Catalog schema and ACL | [`docs/catalog-reference.md`](docs/catalog-reference.md) |
+| CI/CD | [`docs/ci-cd.md`](docs/ci-cd.md) |
+| Troubleshooting | [`docs/troubleshooting.md`](docs/troubleshooting.md) |
+| Recovery and rollback | [`docs/disaster-recovery.md`](docs/disaster-recovery.md) |
+| GeoServer Cloud configuration | [`docs/geoserver-configuration.md`](docs/geoserver-configuration.md) |
+| Monitoring and capacity | [`docs/monitoring.md`](docs/monitoring.md) and [`docs/cost-and-capacity.md`](docs/cost-and-capacity.md) |
+| Terraform variables | [`docs/terraform-variables.md`](docs/terraform-variables.md) |
+| Integration tests | [`integration-tests/README.md`](integration-tests/README.md) |
+| Version baseline | [`docs/version-compatibility.md`](docs/version-compatibility.md) |
+| Documentation audit | [`docs/documentation-gaps.md`](docs/documentation-gaps.md) |
 
 ## BC Gov ALZ guardrails honored
 
@@ -275,7 +296,8 @@ GitHub Copilot chat and other AI agents.
 /opsx:archive          # merge delta specs into openspec/specs/ and file away
 ```
 
-**Source of truth**
+### Source of truth
+
 - Specs: `openspec/specs/` (accumulate on archive)
 - In-flight changes: `openspec/changes/` (one folder per change)
 - Project config: `openspec/config.yaml` (context, rules, artifact templates)

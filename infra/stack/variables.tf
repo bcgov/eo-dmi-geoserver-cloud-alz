@@ -209,13 +209,13 @@ variable "reset_pgconfig_schema" {
 variable "acl_version" {
   type        = string
   description = "GeoServer ACL image tag."
-  default     = "3.0.0"
+  default     = "3.0.1"
 }
 
 variable "rabbitmq_image_tag" {
   type        = string
   description = "RabbitMQ image tag (with management plugin)."
-  default     = "4-management-alpine"
+  default     = "4.0.9-management-alpine"
 }
 
 variable "rabbitmq_user" {

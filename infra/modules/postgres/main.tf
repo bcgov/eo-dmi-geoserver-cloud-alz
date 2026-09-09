@@ -41,7 +41,6 @@ resource "azurerm_postgresql_flexible_server" "this" {
   tags = var.tags
 
   lifecycle {
-    prevent_destroy = true
     # zone: Azure may move the primary zone out of band.
     # administrator_password: generated once; never rotated by Terraform.
     # version: in-place major upgrades are handled by null_resource.postgres_upgrade below;
@@ -111,9 +110,6 @@ resource "azurerm_postgresql_flexible_server_database" "config" {
   collation = "en_US.utf8"
   charset   = "UTF8"
 
-  lifecycle {
-    prevent_destroy = true
-  }
 
   depends_on = [azurerm_private_endpoint.this]
 }
@@ -124,9 +120,6 @@ resource "azurerm_postgresql_flexible_server_database" "data" {
   collation = "en_US.utf8"
   charset   = "UTF8"
 
-  lifecycle {
-    prevent_destroy = true
-  }
 
   depends_on = [azurerm_private_endpoint.this]
 }

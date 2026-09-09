@@ -35,9 +35,6 @@ resource "azurerm_key_vault" "this" {
 
   tags = var.tags
 
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "azurerm_private_endpoint" "this" {
