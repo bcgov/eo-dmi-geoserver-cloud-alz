@@ -104,8 +104,8 @@ locals {
       },
       {
         source_registry = "docker.io"
-        source_image    = "library/postgres:18-alpine"
-        target          = "postgres:18-alpine"
+        source_image    = "library/postgres:18.6-alpine"
+        target          = "postgres:18.6-alpine"
       },
     ]
   )

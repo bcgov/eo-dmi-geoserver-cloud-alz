@@ -2,11 +2,11 @@
 
 ## Topology
 
-GeoServer Cloud 3.0.0 is deployed in **standalone mode** onto an **Azure
+GeoServer Cloud 3.0.1 is deployed in **standalone mode** onto an **Azure
 Container Apps environment** with an **internal load balancer** (no public IPs),
 inside a platform-provided spoke VNet.
 
-```
+```text
                  VNet (platform-provided, locked networking RG)
    ┌───────────────────────────────────────────────────────────────┐
    │  Container Apps environment (workload profiles, INTERNAL LB)    │
@@ -74,4 +74,6 @@ before the Container Apps start. This replaces the former two-phase
 - `prevent_destroy` on stateful resources.
 
 See [`runbook.md`](runbook.md) for the bootstrap and deploy procedure and the
-bootstrap-vs-hardened tradeoffs.
+bootstrap-vs-hardened tradeoffs. See [`security-and-identity.md`](security-and-identity.md)
+for the OIDC, header, machine-client, and ACL trust boundaries, and
+[`operations-guide.md`](operations-guide.md) for post-deployment validation.

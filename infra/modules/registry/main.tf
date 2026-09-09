@@ -17,7 +17,7 @@
 
 module "container_registry" {
   source  = "Azure/avm-res-containerregistry-registry/azurerm"
-  version = "0.5.1"
+  version = "0.8.0"
 
   name                = var.name
   resource_group_name = var.resource_group_name

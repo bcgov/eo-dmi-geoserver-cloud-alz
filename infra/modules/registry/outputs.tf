@@ -10,18 +10,18 @@ output "name" {
 
 output "login_server" {
   description = "ACR login server (e.g. myregistry.azurecr.io)."
-  value       = module.container_registry.resource.login_server
+  value       = module.container_registry.login_server
 }
 
 output "admin_username" {
   description = "ACR admin username."
-  value       = module.container_registry.resource.admin_username
+  value       = module.container_registry.admin_username
   sensitive   = true
 }
 
 output "admin_password" {
   description = "ACR admin password."
-  value       = module.container_registry.resource.admin_password
+  value       = module.container_registry.admin_password
   sensitive   = true
 }
 

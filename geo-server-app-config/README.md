@@ -5,12 +5,16 @@ Azure Container Apps (BC Gov ALZ). Drives the Gateway REST API to converge
 workspaces, datastores, feature types, styles, layer groups, and ACL rules
 against the YAML in `catalog/`.
 
+See [`docs/catalog-reference.md`](../docs/catalog-reference.md) for the complete
+YAML schema, environment references, ACL semantics, reconciliation behavior, and
+machine-client lifecycle.
+
 Pairs with the Terraform stack in `../infra/stack/` — Terraform owns the platform,
 this tool owns the application's domain model.
 
 ## Layout
 
-```
+```text
 geo-server-app-config/
 ├── environments/        # per-env settings (URLs, KV refs)
 │   ├── dev.yaml
@@ -139,3 +143,7 @@ Terraform can read Key Vault and reach the Gateway over the internal LB
 
 `local-run.sh` already opens a Bastion SOCKS5 tunnel and exports
 `HTTPS_PROXY`. `httpx` honours that automatically — no code changes needed.
+
+For the full environment and failure workflow, see
+[`docs/operations-guide.md`](../docs/operations-guide.md) and
+[`docs/troubleshooting.md`](../docs/troubleshooting.md).

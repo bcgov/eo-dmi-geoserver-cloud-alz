@@ -16,7 +16,7 @@ without changing GeoServer — it relies only on standard reverse-proxy +
 ## Stack — all current-latest (June 2026)
 
 | Dependency | Version | Role |
-|---|---|---|
+| --- | --- | --- |
 | Node.js | **24 LTS** | Runtime (Docker base + local) |
 | `express` | `^5.2.1` | HTTP framework |
 | `openid-client` | `^6.8.4` | Keycloak OIDC relying party (functional API) |
@@ -39,7 +39,7 @@ built-in TypeScript execution powers `npm run dev`).
 
 ## Project layout
 
-```
+```text
 src/
   config.ts    Env parsing + validation (fail-fast at boot)
   logger.ts    pino logger with token/secret redaction
@@ -55,7 +55,7 @@ Dockerfile     Multi-stage, non-root, HEALTHCHECK
 ## Routes (§2)
 
 | Method | Path | Auth | Behavior |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | GET | `/healthz` | none | `200 {"status":"ok"}` — health probe |
 | GET | `/auth/login` | none | PKCE + state + nonce → 302 to Keycloak |
 | GET | `/auth/callback` | none | Validate, exchange code, set session, 302 to `returnTo` |
@@ -68,10 +68,17 @@ Dockerfile     Multi-stage, non-root, HEALTHCHECK
 Requires **Node.js ≥ 24**.
 
 ```bash
-cp .env.example .env          # fill in secrets (or inject via App Service)
-npm install                   # generates package-lock.json on first run
+# Create .env from the variable reference below and add local-only values.
+npm install                   # use the committed lockfile
 npm run dev                   # watch mode (Node strips TypeScript directly)
 ```
+
+The repository does not ship a secret-filled `.env.example`. For local work,
+create an environment file from the variable table in
+[`docs/node-oidc-proxy-contract.md`](../docs/node-oidc-proxy-contract.md) and
+[`docs/security-and-identity.md`](../docs/security-and-identity.md). Never
+commit the file. App Service receives the production values from Terraform and
+Key Vault.
 
 Build & run production output:
 
@@ -102,10 +109,11 @@ docker buildx build --platform linux/amd64 \
 
 ## Environment variables (§8)
 
-See `.env.example`. Required: `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
-`OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `SESSION_COOKIE_SECRET` (≥32 bytes),
-`GATEWAY_ORIGIN`, `PUBLIC_ORIGIN`. The app **fails fast at boot** if a required
-variable is missing or the secret is too short.
+Required: `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`,
+`OIDC_REDIRECT_URI`, `SESSION_COOKIE_SECRET` (≥32 bytes), `GATEWAY_ORIGIN`, and
+`PUBLIC_ORIGIN`. The app **fails fast at boot** if a required variable is
+missing or the session secret is too short. See the complete table in
+[`docs/node-oidc-proxy-contract.md`](../docs/node-oidc-proxy-contract.md).
 
 ## Header contract with GeoServer (§4)
 
@@ -127,5 +135,12 @@ and secrets are never logged (pino redaction + careful call sites).
 ## Not in scope
 
 WebSockets (the 3.0 WebMVC gateway dropped WS routing). Role headers — GeoServer
-resolves roles from its JDBC role service keyed on `sec-username`; `sec-roles`
-is reserved for a future header-based source.
+uses the injected `sec-roles` header through `headerAuth`; the current Terraform
+deployment gives OIDC sessions `ROLE_ADMINISTRATOR`. Fine-grained data access is
+handled by `geoserver-acl`.
+
+## Operations
+
+- Security and identity: [`docs/security-and-identity.md`](../docs/security-and-identity.md)
+- Runtime contract: [`docs/node-oidc-proxy-contract.md`](../docs/node-oidc-proxy-contract.md)
+- Troubleshooting: [`docs/troubleshooting.md`](../docs/troubleshooting.md)

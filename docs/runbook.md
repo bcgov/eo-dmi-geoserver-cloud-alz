@@ -1,7 +1,19 @@
 # Runbook — GeoServer Cloud on Azure Container Apps (BC Gov ALZ)
 
 Operational guide for bootstrapping, deploying, and hardening the stack. Read
-this alongside [`architecture.md`](architecture.md).
+this alongside [`architecture.md`](architecture.md) and the more detailed
+[`operations-guide.md`](operations-guide.md).
+
+Related guides:
+
+- [`security-and-identity.md`](security-and-identity.md)
+- [`ci-cd.md`](ci-cd.md)
+- [`troubleshooting.md`](troubleshooting.md)
+- [`disaster-recovery.md`](disaster-recovery.md)
+- [`terraform-variables.md`](terraform-variables.md)
+- [`geoserver-configuration.md`](geoserver-configuration.md)
+- [`monitoring.md`](monitoring.md)
+- [`cost-and-capacity.md`](cost-and-capacity.md)
 
 ## 1. Prerequisites
 
@@ -46,7 +58,9 @@ What it creates:
 - membership of the managed identity in the project security group (or prints the
   manual step if you are not a group owner).
 
-Run it **once per environment** (`dev`, `test`, `prod`).
+Run it **once per deployed environment** (`dev`, `test`, `prod`). The `tools`
+environment is used for pull-request plans and local shared tooling state; it is
+not a production runtime environment.
 
 > If you are not an owner of the security group, a project lead must add the new
 > managed identity to `DO_PuC_Azure_Live_<LicensePlate>_Contributor` before the
@@ -102,6 +116,9 @@ version, edit the tfvars and re-apply — the import is idempotent (`mode=Force`
   gated by their GitHub Environments (configure required reviewers in repo
   settings).
 
+See [`ci-cd.md`](ci-cd.md) for workflow permissions, GitHub Variables, state
+keys, plan artifacts, and the current integration-test status.
+
 ## 4. Hardening checklist (move off bootstrap defaults)
 
 The bootstrap defaults trade some hardening for a first apply from a
@@ -129,3 +146,8 @@ Microsoft-hosted CI runner. Tighten these for production:
 Stateful resources (Key Vault, PostgreSQL) use `prevent_destroy` and the
 provider's `prevent_deletion_if_contains_resources` guard — destroy will block on
 them by design. Remove the guards deliberately if a full teardown is intended.
+
+For post-deployment checks, failure recovery, and restore procedures, use
+[`operations-guide.md`](operations-guide.md),
+[`troubleshooting.md`](troubleshooting.md), and
+[`disaster-recovery.md`](disaster-recovery.md).

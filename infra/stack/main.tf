@@ -299,7 +299,7 @@ resource "azurerm_container_app_job" "init_postgis" {
   template {
     container {
       name   = "init-postgis"
-      image  = "${module.registry.login_server}/postgres:18-alpine"
+      image  = "${module.registry.login_server}/postgres:18.6-alpine"
       cpu    = 0.25
       memory = "0.5Gi"
 
@@ -588,6 +588,36 @@ resource "null_resource" "secret_oidc_session_secret" {
   depends_on = [module.keyvault]
 }
 
+# OIDC client secret — read from the deploy environment and write to Key Vault.
+# The value is inherited by local-exec and is never interpolated into Terraform.
+# Secret names stay lowercase to match the other Key Vault references.
+resource "null_resource" "secret_oidc_client_secret" {
+  triggers = {
+    key_vault_id = module.keyvault.id
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      KV_NAME = var.key_vault_name
+    }
+    command = <<-EOT
+      set -euo pipefail
+      : "$${OIDC_CLIENT_SECRET:?OIDC_CLIENT_SECRET environment variable is required}"
+      EXPIRES="$(date -u -d '+89 days' +%Y-%m-%dT%H:%M:%SZ)"
+      az keyvault secret set \
+        --vault-name "$KV_NAME" \
+        --name oidc-client-secret \
+        --value "$${OIDC_CLIENT_SECRET}" \
+        --content-type "OIDC client secret" \
+        --expires "$EXPIRES" \
+        -o none
+    EOT
+  }
+
+  depends_on = [module.keyvault]
+}
+
 # Build the node-oidc-proxy Docker image and push it to ACR via ACR Tasks.
 # ACR is Standard SKU + public_network_access_enabled = true, so az acr build
 # (server-side build) runs without a local Docker daemon and without VNet access
@@ -739,7 +769,7 @@ resource "azapi_resource" "proxy" {
           { name = "PGCONFIG_USERNAME", value = module.postgres.administrator_login },
 
           # KV references — reference strings (not values) in state; resolved at runtime
-          { name = "OIDC_CLIENT_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=OIDC-CLIENT-SECRET)" },
+          { name = "OIDC_CLIENT_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-client-secret)" },
           { name = "SESSION_COOKIE_SECRET", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=oidc-session-secret)" },
           { name = "PGCONFIG_PASSWORD", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=postgres-password)" },
           # GeoServer admin REST — registers each IDIR user in the default user/group
@@ -760,6 +790,7 @@ resource "azapi_resource" "proxy" {
   depends_on = [
     module.network,
     null_resource.build_proxy_image,
+    null_resource.secret_oidc_client_secret,
     null_resource.secret_oidc_session_secret,
   ]
 }
@@ -782,6 +813,40 @@ resource "azurerm_role_assignment" "proxy_kv_secrets_user" {
   lifecycle {
     ignore_changes = [principal_id]
   }
+}
+
+# Refresh Key Vault references after the secret is written. This also restarts
+# an existing App Service so its container receives the resolved environment.
+resource "null_resource" "refresh_proxy_keyvault_references" {
+  triggers = {
+    proxy_id    = azapi_resource.proxy.id
+    secret_sync = null_resource.secret_oidc_client_secret.id
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      APP_RESOURCE_ID = azapi_resource.proxy.id
+      APP_NAME        = var.proxy_app_service_name
+      RESOURCE_GROUP  = var.resource_group_name
+    }
+    command = <<-EOT
+      set -euo pipefail
+      az rest --method post \
+        --uri "https://management.azure.com$${APP_RESOURCE_ID}/config/configreferences/appsettings/refresh?api-version=2022-03-01" \
+        -o none
+      az webapp restart \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        -o none
+    EOT
+  }
+
+  depends_on = [
+    azapi_resource.proxy,
+    azurerm_role_assignment.proxy_kv_secrets_user,
+    null_resource.secret_oidc_client_secret,
+  ]
 }
 
 # ---------------------------------------------------------------------------
@@ -935,7 +1000,7 @@ resource "azurerm_container_app_job" "init_gsroles" {
   template {
     container {
       name   = "init-gsroles"
-      image  = "${module.registry.login_server}/postgres:18-alpine"
+      image  = "${module.registry.login_server}/postgres:18.6-alpine"
       cpu    = 0.25
       memory = "0.5Gi"
 
