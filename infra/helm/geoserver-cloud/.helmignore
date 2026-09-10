@@ -1,0 +1,7 @@
+.git/
+.gitignore
+*.swp
+*.tmp
+rendered-*.yaml
+scripts/
+values/

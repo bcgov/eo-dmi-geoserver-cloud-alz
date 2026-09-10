@@ -1,0 +1,13 @@
+GeoServer Cloud was rendered as an OpenShift Helm release.
+
+OIDC proxy Service: {{ .Values.proxy.serviceName }}:{{ .Values.proxy.port }}
+Gateway Service: gateway:{{ .Values.serviceDefaults.port }} (internal only)
+Database pgBouncer Service: {{ include "geoserver-cloud.databaseHost" . }} (port, database, and credentials come from the Crunchy release Secret)
+RabbitMQ Service: {{ .Values.rabbitmq.serviceName }}:{{ .Values.rabbitmq.port }}
+
+Check the release with:
+  helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+  oc get pods,svc,pvc -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+
+The proxy Route is disabled by default. When enabled, it targets the OIDC proxy,
+not the gateway. PVCs must not be deleted during an application rollback.

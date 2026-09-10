@@ -29,7 +29,10 @@ function getPool(): pg.Pool | undefined {
       database,
       user: username,
       password,
-      ssl: { rejectUnauthorized: false }, // private endpoint, no public CA needed
+      // Azure: private endpoint requires SSL but has no public CA to verify.
+      // Self-hosted (e.g. Crunchy via pgBouncer with client_tls_sslmode
+      // disabled) rejects SSL negotiation outright, so this must be off there.
+      ssl: config.db.sslEnabled ? { rejectUnauthorized: false } : false,
       max: 2,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,

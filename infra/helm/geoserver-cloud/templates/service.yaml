@@ -1,0 +1,61 @@
+{{- range $name, $service := .Values.services }}
+{{- $config := mergeOverwrite (deepCopy $.Values.serviceDefaults) $service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "geoserver-cloud.serviceLabels" (dict "Chart" $.Chart "Release" $.Release "Values" $.Values "serviceName" $name) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $config.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "geoserver-cloud.name" $ }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- if .Values.proxy.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.proxy.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.serviceLabels" (dict "Chart" $.Chart "Release" $.Release "Values" $.Values "serviceName" "oidc-proxy") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.proxy.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "geoserver-cloud.name" $ }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: oidc-proxy
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.rabbitmq.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: amqp
+      port: {{ .Values.rabbitmq.port }}
+      targetPort: amqp
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "geoserver-cloud.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: rabbitmq

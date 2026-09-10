@@ -122,6 +122,11 @@ export const config = {
     database: optional("PGCONFIG_DATABASE", ""),
     username: optional("PGCONFIG_USERNAME", ""),
     password: optional("PGCONFIG_PASSWORD", ""),
+    // Azure's managed Postgres requires SSL; defaults to true to preserve that
+    // deployment's behavior. Self-hosted Postgres behind pgBouncer with
+    // client_tls_sslmode=disable (e.g. Crunchy on OpenShift) rejects any SSL
+    // negotiation outright, so that environment must set PGCONFIG_SSL=false.
+    sslEnabled: bool("PGCONFIG_SSL", true),
   },
 
   /**

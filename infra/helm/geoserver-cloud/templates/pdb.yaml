@@ -1,0 +1,54 @@
+{{- range $name, $service := .Values.services }}
+{{- $config := mergeOverwrite (deepCopy $.Values.serviceDefaults) $service }}
+{{- if gt (int $config.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "geoserver-cloud.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}
+{{- if and .Values.proxy.enabled (gt (int .Values.proxy.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.proxy.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oidc-proxy
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: oidc-proxy
+{{- end }}
+{{- if gt (int .Values.rabbitmq.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  minAvailable: {{ sub (int .Values.rabbitmq.replicas) 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rabbitmq
+{{- end }}

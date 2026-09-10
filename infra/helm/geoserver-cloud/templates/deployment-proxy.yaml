@@ -1,0 +1,223 @@
+{{- if .Values.proxy.enabled }}
+{{- $proxy := .Values.proxy }}
+{{- $publicOrigin := $proxy.publicOrigin }}
+{{- if not $publicOrigin }}
+{{- if and $proxy.route.enabled $proxy.route.host }}
+{{- $publicOrigin = printf "https://%s" $proxy.route.host }}
+{{- else }}
+{{- fail "proxy.publicOrigin is required when proxy.enabled is true and proxy.route is disabled" }}
+{{- end }}
+{{- end }}
+{{- $oidcIssuer := required "proxy.oidc.issuer is required when proxy.enabled is true" $proxy.oidc.issuer }}
+{{- $oidcClientId := required "proxy.oidc.clientId is required when proxy.enabled is true" $proxy.oidc.clientId }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $proxy.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: oidc-proxy
+spec:
+  {{- if not $proxy.autoscaling.enabled }}
+  replicas: {{ $proxy.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: oidc-proxy
+  template:
+    metadata:
+      labels:
+        {{- include "geoserver-cloud.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: oidc-proxy
+    spec:
+      terminationGracePeriodSeconds: {{ $proxy.terminationGracePeriodSeconds }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "geoserver-cloud.imagePullSecrets" $ | nindent 6 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: oidc-proxy
+                    app.kubernetes.io/instance: {{ $.Release.Name }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: oidc-proxy
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+      volumes:
+        - name: scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+      containers:
+        - name: oidc-proxy
+          image: ghcr.io/bcgov/eo-dmi-geoserver-cloud-alz/node-oidc-proxy:{{ .Values.images.proxy.tag }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $proxy.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml $proxy.resources | nindent 12 }}
+          env:
+            - name: PORT
+              value: {{ $proxy.port | quote }}
+            - name: OIDC_ISSUER
+              value: {{ $oidcIssuer | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ $oidcClientId | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.runtime.name }}
+                  key: {{ $.Values.secrets.runtime.keys.oidcClientSecret }}
+            - name: OIDC_REDIRECT_URI
+              value: {{ printf "%s/auth/callback" (trimSuffix "/" $publicOrigin) | quote }}
+            - name: OIDC_POST_LOGOUT_REDIRECT_URI
+              value: {{ printf "%s/" (trimSuffix "/" $publicOrigin) | quote }}
+            - name: OIDC_SCOPES
+              value: {{ $proxy.oidc.scopes | quote }}
+            - name: SESSION_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.runtime.name }}
+                  key: {{ $.Values.secrets.runtime.keys.sessionCookieSecret }}
+            - name: SESSION_COOKIE_NAME
+              value: {{ $proxy.session.cookieName | quote }}
+            - name: SESSION_MAX_AGE_SECONDS
+              value: {{ $proxy.session.maxAgeSeconds | quote }}
+            - name: GATEWAY_ORIGIN
+              value: {{ $proxy.gatewayOrigin | quote }}
+            - name: GATEWAY_TLS_INSECURE
+              value: {{ $proxy.gatewayTlsInsecure | quote }}
+            - name: GATEWAY_CONNECT_TIMEOUT_MS
+              value: {{ $proxy.gatewayConnectTimeoutMs | quote }}
+            - name: GATEWAY_READ_TIMEOUT_MS
+              value: {{ $proxy.gatewayReadTimeoutMs | quote }}
+            - name: PUBLIC_ORIGIN
+              value: {{ $publicOrigin | quote }}
+            - name: GS_IDENTITY_HEADER
+              value: {{ $proxy.identity.identityHeader | quote }}
+            - name: GS_ROLES_HEADER
+              value: {{ $proxy.identity.rolesHeader | quote }}
+            - name: OIDC_ROLES
+              value: {{ $proxy.identity.oidcRoles | quote }}
+            - name: USERNAME_CLAIM
+              value: {{ $proxy.identity.usernameClaim | quote }}
+            - name: USERNAME_LOWERCASE
+              value: {{ $proxy.identity.usernameLowercase | quote }}
+            - name: USER_GUID_CLAIM
+              value: {{ $proxy.identity.userGuidClaim | quote }}
+            - name: DISPLAY_NAME_HEADER
+              value: {{ $proxy.identity.displayNameHeader | quote }}
+            - name: DISPLAY_NAME_CLAIM
+              value: {{ $proxy.identity.displayNameClaim | quote }}
+            - name: MACHINE_AUTH_PASSTHROUGH
+              value: {{ $proxy.machineAuthPassthrough | quote }}
+            - name: DEFAULT_RETURN_TO
+              value: {{ $proxy.defaultReturnTo | quote }}
+            - name: PGCONFIG_HOST
+              value: {{ include "geoserver-cloud.databaseHost" $ | quote }}
+            # Crunchy's pgBouncer runs with client_tls_sslmode: disable (see
+            # crunchy-postgres values.yaml), so the proxy must not attempt SSL
+            # here - unlike its Azure deployment, where managed Postgres
+            # requires it. Requires a node-oidc-proxy image built with the
+            # PGCONFIG_SSL support in src/config.ts and src/db.ts.
+            - name: PGCONFIG_SSL
+              value: "false"
+            - name: PGCONFIG_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: port
+            - name: PGCONFIG_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: dbname
+            - name: PGCONFIG_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: user
+            - name: PGCONFIG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: password
+            - name: GEOSERVER_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.runtime.name }}
+                  key: {{ $.Values.secrets.runtime.keys.geoserverAdminUsername }}
+            - name: GEOSERVER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.runtime.name }}
+                  key: {{ $.Values.secrets.runtime.keys.geoserverAdminPassword }}
+            - name: GEOSERVER_BASE_PATH
+              value: {{ $proxy.geoserver.basePath | quote }}
+            - name: GEOSERVER_USERGROUP_SERVICE
+              value: {{ $proxy.geoserver.userGroupService | quote }}
+            - name: GEOSERVER_ADMIN_PRINCIPALS
+              value: {{ $proxy.geoserver.adminPrincipals | quote }}
+            - name: LOG_LEVEL
+              value: {{ $proxy.logLevel | quote }}
+            - name: DEBUG_HEADERS
+              value: {{ $proxy.debugHeaders | quote }}
+            - name: DEBUG_UNSAFE_HEADERS
+              value: {{ $proxy.debugUnsafeHeaders | quote }}
+            {{- range $envName, $envValue := $proxy.extraEnv }}
+            - name: {{ $envName }}
+              value: {{ $envValue | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+          startupProbe:
+            httpGet:
+              path: {{ $proxy.probes.startup.path }}
+              port: http
+            failureThreshold: {{ $proxy.probes.startup.failureThreshold }}
+            periodSeconds: {{ $proxy.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ $proxy.probes.startup.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ $proxy.probes.liveness.path }}
+              port: http
+            failureThreshold: {{ $proxy.probes.liveness.failureThreshold }}
+            periodSeconds: {{ $proxy.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $proxy.probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ $proxy.probes.readiness.path }}
+              port: http
+            failureThreshold: {{ $proxy.probes.readiness.failureThreshold }}
+            periodSeconds: {{ $proxy.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $proxy.probes.readiness.timeoutSeconds }}
+{{- end }}

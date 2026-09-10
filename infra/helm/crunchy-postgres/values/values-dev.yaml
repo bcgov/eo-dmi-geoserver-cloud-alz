@@ -1,0 +1,3 @@
+crunchy:
+  instances:
+    replicas: 1

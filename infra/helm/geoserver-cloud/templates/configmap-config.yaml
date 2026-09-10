@@ -1,0 +1,9 @@
+{{- include "geoserver-cloud.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "geoserver-cloud.fullname" . }}-config
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+data:
+  {{- (.Files.Glob "config/*.yml").AsConfig | nindent 2 }}
