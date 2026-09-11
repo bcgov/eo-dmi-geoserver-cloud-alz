@@ -212,6 +212,42 @@ server-side dry run and the dev install smoke checks remain mandatory promotion
 gates; tasks 8.3 through 8.5 are intentionally open until an approved cluster
 context is available.
 
+## Post-deploy security configuration
+
+`deploy-geoserver-cloud.sh` automatically runs
+`infra/helm/configure-geoserver-security.sh` after a successful GeoServer
+install/upgrade. It wires GeoServer's `sec-username`/`sec-roles`
+pre-authentication header (injected by the Node OIDC proxy and gateway) into
+GeoServer's own security filter chains.
+
+This step exists because GeoServer never reads that header on its own:
+GeoServer Cloud's `environment-admin-auth`/`gateway-shared-auth` extensions
+only provide the *capability* for header-based pre-authentication, they do
+not create a filter for it. Without this step, `sec-username` arrives at
+every backend correctly but nothing reads it, so an otherwise-successful OIDC
+login is silently treated as anonymous — the logged-in user's name and
+Logout link simply never appear in the UI.
+
+The step is idempotent (safe on every deploy) and non-fatal (a failure here
+is logged as a warning, not a script failure, since the application
+deployment itself already succeeded by that point). Skip it with
+`--skip-security-config`, or bootstrap an initial `ROLE_ADMINISTRATOR`
+principal with `--admin-principal you@gov.bc.ca`. It can also be re-run
+standalone at any time, including against an environment that predates this
+step:
+
+```bash
+infra/helm/configure-geoserver-security.sh \
+  --namespace geoserver-dev \
+  --geoserver-release geoserver-cloud \
+  --admin-principal you@gov.bc.ca
+```
+
+See that script's own header comment for the full rationale, including why
+it talks to GeoServer via `oc exec` into a running gateway pod rather than a
+tunnel, and a documented curl/`oc exec` `-o /dev/null` quirk on this cluster
+that the script works around internally.
+
 ## Install and smoke test
 
 ```powershell

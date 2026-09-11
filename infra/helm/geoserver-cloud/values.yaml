@@ -47,7 +47,7 @@ images:
   proxy:
     repository: local
     path: node-oidc-proxy
-    tag: "pr-13"
+    tag: "9f778c5c5069a87abec9eecbd6666d5d9fcdac3c"
 
 serviceDefaults:
   port: 8080

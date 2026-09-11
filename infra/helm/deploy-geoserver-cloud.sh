@@ -10,6 +10,7 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRUNCHY_CHART="${SCRIPT_DIR}/crunchy-postgres"
 GEOSERVER_CHART="${SCRIPT_DIR}/geoserver-cloud"
+SECURITY_SCRIPT="${SCRIPT_DIR}/configure-geoserver-security.sh"
 
 NAMESPACE="${OPENSHIFT_NAMESPACE:-}"
 ENVIRONMENT="${GEOSERVER_ENVIRONMENT:-dev}"
@@ -26,6 +27,9 @@ OIDC_CLIENT_SECRET_VALUE="${OIDC_CLIENT_SECRET:-}"
 EXPECTED_OC_SERVER="${EXPECTED_OC_SERVER:-}"
 DRY_RUN="${DRY_RUN:-false}"
 DEBUG_HELM="${DEBUG_HELM:-false}"
+SKIP_SECURITY_CONFIG="${SKIP_SECURITY_CONFIG:-false}"
+GEOSERVER_ADMIN_PRINCIPAL="${GEOSERVER_SECURITY_ADMIN_PRINCIPAL:-}"
+SECURITY_BASE_PATH="${GEOSERVER_SECURITY_BASE_PATH:-/geoserver/cloud}"
 
 # Mutable state used by traps and helper functions; pre-declared so `set -u`
 # never trips on them before they are assigned.
@@ -64,13 +68,33 @@ Options:
                             set DRY_RUN=true)
   --debug                   Log the resolved Helm command lines and pass --debug to
                             Helm (default: false; or set DEBUG_HELM=true)
+  --skip-security-config    Skip the post-deploy GeoServer security configuration
+                            step (default: false; or set SKIP_SECURITY_CONFIG=true)
+  --admin-principal EMAIL   Bootstrap this principal with ROLE_ADMINISTRATOR during
+                            the security configuration step (default: unset, step
+                            skipped; or set GEOSERVER_SECURITY_ADMIN_PRINCIPAL)
+  --security-base-path PATH  Gateway base path passed to the security configuration
+                            step; must match proxy.geoserver.basePath in your values
+                            file (default: /geoserver/cloud; or set
+                            GEOSERVER_SECURITY_BASE_PATH)
   -h, --help                Show this help
 
 Environment:
   OPENSHIFT_NAMESPACE, GEOSERVER_ENVIRONMENT, CRUNCHY_RELEASE_NAME,
   GEOSERVER_RELEASE_NAME, CRUNCHY_USER_NAME, HELM_TIMEOUT, WAIT_SECONDS,
   POLL_SECONDS, HEARTBEAT_SECONDS, OIDC_CLIENT_SECRET, EXPECTED_OC_SERVER,
-  DRY_RUN, DEBUG_HELM
+  DRY_RUN, DEBUG_HELM, SKIP_SECURITY_CONFIG, GEOSERVER_SECURITY_ADMIN_PRINCIPAL,
+  GEOSERVER_SECURITY_BASE_PATH
+
+After a successful GeoServer install/upgrade, this script automatically runs
+configure-geoserver-security.sh (skipped in --dry-run, or with
+--skip-security-config) to wire GeoServer's sec-username/sec-roles pre-auth
+header into its own security filter chains - without this step, GeoServer
+never reads that header at all and every OIDC login is silently treated as
+anonymous. It is idempotent, safe to re-run on its own at any time (see that
+script's own --help), and a failure there is logged as a warning rather than
+failing this script, since the application deployment itself already
+succeeded by that point.
 
 The OIDC client secret is accepted only via the OIDC_CLIENT_SECRET environment
 variable (there is no --oidc-client-secret CLI flag) so it never appears in
@@ -163,6 +187,20 @@ parse_args() {
       --debug)
         DEBUG_HELM="true"
         shift
+        ;;
+      --skip-security-config)
+        SKIP_SECURITY_CONFIG="true"
+        shift
+        ;;
+      --admin-principal)
+        [[ $# -ge 2 && "$2" != -* ]] || die "--admin-principal requires a value"
+        GEOSERVER_ADMIN_PRINCIPAL="$2"
+        shift 2
+        ;;
+      --security-base-path)
+        [[ $# -ge 2 && "$2" != -* ]] || die "--security-base-path requires a value"
+        SECURITY_BASE_PATH="$2"
+        shift 2
         ;;
       -h|--help)
         usage
@@ -393,6 +431,38 @@ pgbouncer_service_ready() {
   return 0
 }
 
+# Wires GeoServer's sec-username/sec-roles pre-auth header into its security
+# filter chains via configure-geoserver-security.sh; see that script's own
+# header comment for the full rationale. Idempotent, so safe to run after
+# every deploy. Deliberately non-fatal on failure: the application deployment
+# itself already succeeded by the time this runs, and the step is easy to
+# re-run standalone once the underlying issue is fixed.
+configure_geoserver_security() {
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "[dry-run] Skipping GeoServer security configuration"
+    return 0
+  fi
+  if [[ "$SKIP_SECURITY_CONFIG" == "true" ]]; then
+    log "Skipping GeoServer security configuration (--skip-security-config)"
+    return 0
+  fi
+
+  log "Configuring GeoServer security (sec-username/sec-roles pre-auth filter)..."
+  local -a security_args=(
+    --namespace "$NAMESPACE"
+    --geoserver-release "$GEOSERVER_RELEASE"
+    --base-path "$SECURITY_BASE_PATH"
+  )
+  if [[ -n "$GEOSERVER_ADMIN_PRINCIPAL" ]]; then
+    security_args+=(--admin-principal "$GEOSERVER_ADMIN_PRINCIPAL")
+  fi
+  if OC="$OC" "$SECURITY_SCRIPT" "${security_args[@]}"; then
+    log "GeoServer security configuration complete."
+  else
+    log "WARNING: GeoServer security configuration failed; sec-username-based login may be silently treated as anonymous until this is resolved. Re-run manually: ${SECURITY_SCRIPT} --namespace ${NAMESPACE} --geoserver-release ${GEOSERVER_RELEASE}"
+  fi
+}
+
 main() {
   trap on_exit EXIT
   trap 'on_interrupt INT' INT
@@ -508,6 +578,8 @@ main() {
   log "Namespace: ${NAMESPACE}"
   log "Database Service: ${CRUNCHY_RELEASE}-pgbouncer"
   log "Database Secret: ${CRUNCHY_RELEASE}-pguser-${CRUNCHY_USER}"
+
+  configure_geoserver_security
 }
 
 main "$@"
