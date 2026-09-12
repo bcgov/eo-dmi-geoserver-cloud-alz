@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.81"
+      version = "~> 5.4"
     }
     # azapi drives the server-side ACR importImage action (no Docker daemon, no
     # az CLI) so images are sourced into the registry by Terraform itself.
