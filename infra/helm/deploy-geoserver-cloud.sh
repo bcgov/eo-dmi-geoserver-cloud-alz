@@ -92,9 +92,8 @@ configure-geoserver-security.sh (skipped in --dry-run, or with
 header into its own security filter chains - without this step, GeoServer
 never reads that header at all and every OIDC login is silently treated as
 anonymous. It is idempotent, safe to re-run on its own at any time (see that
-script's own --help), and a failure there is logged as a warning rather than
-failing this script, since the application deployment itself already
-succeeded by that point.
+script's own --help), and a failure there stops this script so a deployment
+cannot report success while OIDC requests are treated as anonymous.
 
 The OIDC client secret is accepted only via the OIDC_CLIENT_SECRET environment
 variable (there is no --oidc-client-secret CLI flag) so it never appears in
@@ -239,27 +238,45 @@ write_oidc_values_file() {
   } >"$OIDC_TEMP_VALUES_FILE"
 }
 
-# Simple mkdir-based mutual exclusion (no flock dependency) so two concurrent
+# Atomic hard-link mutual exclusion (no flock dependency) so two concurrent
 # invocations against the same namespace/release trio fail fast instead of
 # racing Helm/oc directly. Stale locks left by a killed process are reclaimed.
 acquire_lock() {
-  local lock_dir="${TMPDIR:-/tmp}/deploy-geoserver-cloud.${NAMESPACE}.${CRUNCHY_RELEASE}.${GEOSERVER_RELEASE}.lock"
-  if ! mkdir "$lock_dir" 2>/dev/null; then
-    local stale_pid=""
-    stale_pid="$(cat "${lock_dir}/pid" 2>/dev/null || true)"
-    if [[ -n "$stale_pid" ]] && ! kill -0 "$stale_pid" 2>/dev/null; then
-      log "Removing stale deploy lock left by dead process ${stale_pid}: ${lock_dir}"
-      rm -rf "$lock_dir"
-    fi
-    mkdir "$lock_dir" 2>/dev/null || die "Another deploy is already in progress for namespace '${NAMESPACE}' with releases '${CRUNCHY_RELEASE}'/'${GEOSERVER_RELEASE}' (lock: ${lock_dir}). Wait for it to finish, or remove the lock directory if you are certain no other instance is running."
+  local lock_file="${TMPDIR:-/tmp}/deploy-geoserver-cloud.${NAMESPACE}.${CRUNCHY_RELEASE}.${GEOSERVER_RELEASE}.lock"
+  local owner_file="${lock_file}.$$"
+  local stale_pid=""
+
+  printf '%s\n' "$$" > "$owner_file"
+  if ln "$owner_file" "$lock_file" 2>/dev/null; then
+    rm -f "$owner_file"
+    LOCK_DIR="$lock_file"
+    return 0
   fi
-  echo "$$" >"${lock_dir}/pid"
-  LOCK_DIR="$lock_dir"
+  rm -f "$owner_file"
+
+  if [[ -f "$lock_file" ]]; then
+    stale_pid="$(cat "$lock_file" 2>/dev/null || true)"
+  elif [[ -d "$lock_file" ]]; then
+    stale_pid="$(cat "${lock_file}/pid" 2>/dev/null || true)"
+  fi
+  if [[ -n "$stale_pid" ]] && ! kill -0 "$stale_pid" 2>/dev/null; then
+    log "Removing stale deploy lock left by dead process ${stale_pid}: ${lock_file}"
+    rm -rf "$lock_file"
+    printf '%s\n' "$$" > "$owner_file"
+    if ln "$owner_file" "$lock_file" 2>/dev/null; then
+      rm -f "$owner_file"
+      LOCK_DIR="$lock_file"
+      return 0
+    fi
+    rm -f "$owner_file"
+  fi
+
+  die "Another deploy is already in progress for namespace '${NAMESPACE}' with releases '${CRUNCHY_RELEASE}'/'${GEOSERVER_RELEASE}' (lock: ${lock_file}). Wait for it to finish, or remove the lock if you are certain no other instance is running."
 }
 
 release_lock() {
   if [[ -n "$LOCK_DIR" ]]; then
-    rm -rf "$LOCK_DIR"
+    rm -f "$LOCK_DIR"
     LOCK_DIR=""
   fi
 }
@@ -431,12 +448,20 @@ pgbouncer_service_ready() {
   return 0
 }
 
+runtime_secret_name() {
+  local secret
+  secret="$("$OC" get secret -n "$NAMESPACE" \
+    -l "app.kubernetes.io/instance=${GEOSERVER_RELEASE},app.kubernetes.io/component=runtime-secret" \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  [[ -n "$secret" ]] || die "Could not find the GeoServer runtime Secret for release '${GEOSERVER_RELEASE}' in namespace '${NAMESPACE}'."
+  printf '%s' "$secret"
+}
+
 # Wires GeoServer's sec-username/sec-roles pre-auth header into its security
 # filter chains via configure-geoserver-security.sh; see that script's own
 # header comment for the full rationale. Idempotent, so safe to run after
-# every deploy. Deliberately non-fatal on failure: the application deployment
-# itself already succeeded by the time this runs, and the step is easy to
-# re-run standalone once the underlying issue is fixed.
+# every deploy. A failure is fatal because the deployment is not usable for
+# OIDC until this wiring is applied.
 configure_geoserver_security() {
   if [[ "$DRY_RUN" == "true" ]]; then
     log "[dry-run] Skipping GeoServer security configuration"
@@ -448,9 +473,12 @@ configure_geoserver_security() {
   fi
 
   log "Configuring GeoServer security (sec-username/sec-roles pre-auth filter)..."
+  local runtime_secret
+  runtime_secret="$(runtime_secret_name)"
   local -a security_args=(
     --namespace "$NAMESPACE"
     --geoserver-release "$GEOSERVER_RELEASE"
+    --runtime-secret-name "$runtime_secret"
     --base-path "$SECURITY_BASE_PATH"
   )
   if [[ -n "$GEOSERVER_ADMIN_PRINCIPAL" ]]; then
@@ -459,7 +487,8 @@ configure_geoserver_security() {
   if OC="$OC" "$SECURITY_SCRIPT" "${security_args[@]}"; then
     log "GeoServer security configuration complete."
   else
-    log "WARNING: GeoServer security configuration failed; sec-username-based login may be silently treated as anonymous until this is resolved. Re-run manually: ${SECURITY_SCRIPT} --namespace ${NAMESPACE} --geoserver-release ${GEOSERVER_RELEASE}"
+    log "ERROR: GeoServer security configuration failed; sec-username-based login may be silently treated as anonymous. Re-run manually: ${SECURITY_SCRIPT} --namespace ${NAMESPACE} --geoserver-release ${GEOSERVER_RELEASE} --runtime-secret-name ${runtime_secret}"
+    return 1
   fi
 }
 
@@ -567,19 +596,21 @@ main() {
   fi
   run_helm "${geoserver_args[@]}"
 
-  CURRENT_STEP="complete"
-  if [[ "$DRY_RUN" == "true" ]]; then
-    log "Dry run complete (no changes were made)"
-  else
-    log "Deployment complete"
-  fi
   log "Crunchy release: ${CRUNCHY_RELEASE}"
   log "GeoServer release: ${GEOSERVER_RELEASE}"
   log "Namespace: ${NAMESPACE}"
   log "Database Service: ${CRUNCHY_RELEASE}-pgbouncer"
   log "Database Secret: ${CRUNCHY_RELEASE}-pguser-${CRUNCHY_USER}"
 
+  CURRENT_STEP="configuring GeoServer security"
   configure_geoserver_security
+
+  CURRENT_STEP="complete"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log "Dry run complete (no changes were made)"
+  else
+    log "Deployment complete"
+  fi
 }
 
 main "$@"

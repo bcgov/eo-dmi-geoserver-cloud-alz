@@ -58,13 +58,37 @@ jobs:
       apply: false
     secrets: inherit
 
+  helm-validation:
+    name: helm-validation
+    needs: fork-gate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Validate OpenShift Helm chart
+        run: |
+          set -euo pipefail
+          bash infra/helm/geoserver-cloud/scripts/validate.sh infra/helm/geoserver-cloud/values/values-dev.yaml
+
   # Single aggregator = the ONLY required status check to wire in branch
   # protection. Renaming or splitting the jobs above never touches the ruleset.
   # `skipped` is treated as a pass; only failure/cancelled blocks the gate.
   results:
     name: results
     if: always()
-    needs: [fork-gate, plan, pr-title]
+    needs: [fork-gate, plan, pr-title, helm-validation]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:

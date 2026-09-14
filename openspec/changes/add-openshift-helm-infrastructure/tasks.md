@@ -33,7 +33,7 @@
 
 - [x] 5.1 Set every application and dependency image to an `artifacts.developer.gov.bc.ca` path, using the approved Artifactory remote repository for Docker Hub-origin images and `bcgov-docker-local` for Crunchy images; reject direct Docker Hub and floating `latest` references.
 - [x] 5.2 Support the cluster-wide Artifactory remote-cache Secret or an `ArtifactoryServiceAccount`-generated `artifacts-*` Secret, attach it through `imagePullSecrets`, and document the required service-account Secret link.
-- [x] 5.3 Create the `geoserver-cloud-runtime` Secret with stable generated values, accept an optional first-install OIDC client secret through `--set-string`, and wire all application passwords and usernames through `secretKeyRef`; retain Crunchy database and platform image-pull Secret ownership.
+- [x] 5.3 Create the release-derived `<geoserver-release>-runtime` Secret with stable generated values, accept an optional first-install OIDC client secret through `--set-string`, and wire all application passwords and usernames through `secretKeyRef`; retain Crunchy database and platform image-pull Secret ownership.
 - [x] 5.4 Add a preflight values and operator procedure that checks required Secret names and keys, Artifactory repository paths, immutable image versions, Crunchy images, storage class, backup repository, and namespace quota before Helm installation.
 - [x] 5.5 Add checks or documentation that prevent fixed credentials from being supplied through committed values files or Helm `--set` arguments, and document Helm release metadata access controls.
 
@@ -49,8 +49,8 @@
 
 ## 8. Validation, documentation, and rollout
 
-- [x] 8.1 Document development, test, and production values examples without secret values, including Artifactory and vendored Crunchy prerequisites, template refresh guidance, `helm lint`, `helm template`, and the required OpenShift prerequisites.
-- [x] 8.2 Run `helm lint` and render representative values for development, test, and production; verify the output contains the complete workload set, only approved Artifactory image paths, expected Service DNS targets, no unintended edge resources, and no embedded credentials.
+- [x] 8.1 Document the development values example without secret values, including Artifactory and vendored Crunchy prerequisites, template refresh guidance, `helm lint`, `helm template`, and the required OpenShift prerequisites. Test and production examples remain deferred pending the platform-owner HA and backup decision.
+- [x] 8.2 Run `helm lint` and render the development values; verify the output contains the complete workload set, only approved Artifactory image paths, expected Service DNS targets, no unintended edge resources, and no embedded credentials. Test and production renders remain deferred with their values profiles.
 - [ ] 8.3 Run `oc apply --dry-run=server -f -` on the separately rendered Crunchy and GeoServer manifests in the target namespace and resolve restricted-v2 SCC, quota, image-policy, dependency, and schema errors before installation.
 - [ ] 8.4 Run `infra/helm/deploy-geoserver-cloud.sh` for the development release; verify the script waits for Crunchy primary/replica readiness, the release-derived user Secret, and pgBouncer before installing GeoServer, then verify proxy OIDC login, probes, pgBackRest behavior, RabbitMQ PVC attachment, internal gateway routing, ACL access, RabbitMQ events, PostGIS availability, and rendering behavior.
 - [ ] 8.5 Test an application-only upgrade and `helm rollback` while preserving Crunchy Postgres and RabbitMQ persistent claims, then execute and document a pgBackRest backup and restore test for stateful version changes.

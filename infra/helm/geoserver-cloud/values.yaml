@@ -265,7 +265,7 @@ rabbitmq:
 
 secrets:
   runtime:
-    name: geoserver-cloud-runtime
+    name: ""
     keys:
       rabbitmqUsername: rabbitmq-username
       rabbitmqPassword: rabbitmq-password

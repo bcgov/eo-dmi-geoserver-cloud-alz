@@ -29,12 +29,17 @@ helm upgrade --install $env:CRUNCHY_RELEASE_NAME infra/helm/crunchy-postgres `
   --wait --timeout 20m
 ```
 
-The chart renders the operator resource from the release name. For release
-`crunchy-postgres` and user `postgres`, the operator creates:
+The chart renders the operator resource from the release name. With the default
+release `crunchy-postgres` and application user `geoserverproxy`, the operator
+creates:
 
 - pgBouncer Service: `crunchy-postgres-pgbouncer`
-- user Secret: `crunchy-postgres-pguser-postgres`
+- application user Secret: `crunchy-postgres-pguser-geoserverproxy`
 - Secret keys: `dbname`, `port`, `user`, and `password`
+
+The configured `postgres` user has its own Secret as well. The GeoServer chart
+must use the least-privilege `geoserverproxy` Secret unless an operator
+explicitly selects another configured application user.
 
 The GeoServer chart receives the release name explicitly:
 

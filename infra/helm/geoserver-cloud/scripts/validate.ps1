@@ -34,6 +34,12 @@ if ($RequireProxy) {
 & helm @templateArgs | Set-Content -Path $renderedPath -Encoding utf8
 if ($LASTEXITCODE -ne 0) { throw "helm template failed" }
 
+if (-not (Get-Command kubeconform -ErrorAction SilentlyContinue)) {
+  throw "Required command not found: kubeconform"
+}
+& kubeconform -strict -ignore-missing-schemas -summary $renderedPath
+if ($LASTEXITCODE -ne 0) { throw "kubeconform validation failed" }
+
 $rendered = Get-Content -Raw -Path $renderedPath
 $documents = @(
   $rendered -split '(?m)^---\s*(?:\r?\n|$)' |

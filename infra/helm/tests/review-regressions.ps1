@@ -80,6 +80,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 $rendered | Set-Content -Path $renderedPath -Encoding utf8
 
+$customReleaseArgs = @(
+  "template",
+  "geoserver-test",
+  $chartRoot,
+  "--namespace",
+  "geoserver-dev",
+  "-f",
+  $devValues,
+  "--set-string",
+  "database.crunchyReleaseName=crunchy-postgres"
+)
+$customRendered = (& helm @customReleaseArgs 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) {
+  throw "GeoServer custom release render failed: $customRendered"
+}
+Assert-Contains $customRendered "name: geoserver-test-runtime" "Non-default GeoServer releases must derive the runtime Secret name"
+
 Assert-Contains $rendered "artifacts.developer.gov.bc.ca/bcgov-docker-local/node-oidc-proxy:" "Proxy image must use the Artifactory local repository"
 Assert-NotContains $rendered "ghcr.io/bcgov/eo-dmi-geoserver-cloud-alz/node-oidc-proxy" "Proxy image must not bypass Artifactory"
 Assert-Contains $rendered '"helm.sh/hook": pre-install,pre-upgrade' "Database initialization must run before application workloads"

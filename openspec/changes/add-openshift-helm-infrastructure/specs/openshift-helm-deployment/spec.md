@@ -92,8 +92,9 @@ Postgres, pgBackRest, pgBouncer, and related images MUST use approved
 workload may reference `docker.io`, `registry-1.docker.io`, or an unapproved image
 registry host. The project-built Node OIDC proxy image MUST use the approved
 `artifacts.developer.gov.bc.ca/bcgov-docker-local/node-oidc-proxy:<tag>` path.
-Runtime credentials MUST be read through `secretKeyRef` entries from
-the chart-created `geoserver-cloud-runtime` Secret for application credentials.
+Runtime credentials MUST be read through `secretKeyRef` entries from the
+chart-created `<geoserver-release>-runtime` Secret by default for application
+credentials. `secrets.runtime.name` MAY override that stable name.
 The Crunchy-generated database Secret and platform image-pull Secret remain
 external Secret owners. The chart MUST NOT contain fixed credential values in
 committed values files or require credentials through Helm `--set` values.
@@ -124,12 +125,12 @@ precedence on upgrades.
 
 - **GIVEN** `OIDC_CLIENT_SECRET` is set in the operator terminal
 - **WHEN** the operator passes `--set-string secrets.runtime.oidcClientSecret="$OIDC_CLIENT_SECRET"`
-- **THEN** the rendered `geoserver-cloud-runtime` Secret uses that value for
+- **THEN** the rendered `<geoserver-release>-runtime` Secret uses that value for
   `oidc-client-secret` and the proxy references that key with `secretKeyRef`
 
 #### Scenario: Existing OIDC client secret survives upgrade
 
-- **GIVEN** `geoserver-cloud-runtime` already exists with `oidc-client-secret`
+- **GIVEN** the release runtime Secret already exists with `oidc-client-secret`
 - **WHEN** the chart is upgraded with a different or omitted
   `secrets.runtime.oidcClientSecret` value
 - **THEN** the existing Secret value remains unchanged

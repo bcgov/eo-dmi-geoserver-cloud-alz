@@ -1,3 +1,5 @@
+# OpenShift Helm Infrastructure Design
+
 ## Context
 
 The current deployment target is Azure Container Apps. `infra/stack/` creates the
@@ -102,7 +104,8 @@ The vendored templates are reviewed in this repository and use the upstream
 `crunchy.*` values contract. There is no runtime chart dependency or dependency
 lock file to refresh. The database chart uses the Helm release as the cluster
 name by default, so the application chart derives `<release>-pgbouncer` and
-`<release>-pguser-postgres`; it does not declare or render the Crunchy templates.
+`<release>-pguser-<crunchyUserName>`; it does not declare or render the Crunchy
+templates. The default application user is `geoserverproxy`.
 Each chart is linted and rendered independently before promotion.
 
 **Alternatives considered:**
@@ -382,9 +385,9 @@ readiness for safe startup and rolling updates.
 2. Confirm the cluster-wide Artifactory remote-cache Secret or create the approved
   `ArtifactoryServiceAccount` and wait for its generated `artifacts-*` Secret.
   Link the Secret to the required service accounts and pass its name to the chart.
-  Let Helm create `geoserver-cloud-runtime`, then retrieve and register the
-  generated OIDC client secret with the configured OIDC provider. Verify that no
-  credential values are stored in committed values files.
+  Let Helm create `<geoserver-release>-runtime` by default, then retrieve and
+  register the generated OIDC client secret with the configured OIDC provider.
+  Verify that no credential values are stored in committed values files.
 3. Lint and render the Crunchy chart first, then lint and render
   `infra/helm/geoserver-cloud` with `database.crunchyReleaseName` set to the
   Crunchy release name. When updating Crunchy, import the templates from the

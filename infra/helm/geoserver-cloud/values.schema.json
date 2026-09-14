@@ -415,7 +415,7 @@
           "type": "object",
           "required": ["name", "keys"],
           "properties": {
-            "name": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
             "oidcClientSecret": { "type": "string", "minLength": 1 },
             "keys": {
               "type": "object",

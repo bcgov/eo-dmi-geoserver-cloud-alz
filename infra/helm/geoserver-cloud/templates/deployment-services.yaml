@@ -134,22 +134,22 @@ spec:
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.rabbitmqUsername }}
             - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.rabbitmqPassword }}
             - name: ACL_USERS_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.aclAdminPassword }}
             - name: ACL_USERS_GEOSERVER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.aclGeoserverPassword }}
             {{- else }}
             {{- $springProfiles := "standalone,pgconfig,acl,environment-admin-auth" }}
@@ -246,12 +246,12 @@ spec:
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.rabbitmqUsername }}
             - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.rabbitmqPassword }}
             - name: ACL_URL
               value: {{ printf "http://acl:%d/acl/api" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "acl"))) }}
@@ -262,17 +262,17 @@ spec:
             - name: ACL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.aclGeoserverPasswordPlain }}
             - name: GEOSERVER_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.geoserverAdminUsername }}
             - name: GEOSERVER_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.geoserverAdminPassword }}
             {{- end }}
             {{- range $envName, $envValue := $config.extraEnv }}

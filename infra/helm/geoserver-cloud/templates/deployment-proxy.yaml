@@ -98,7 +98,7 @@ spec:
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.oidcClientSecret }}
             - name: OIDC_REDIRECT_URI
               value: {{ printf "%s/auth/callback" (trimSuffix "/" $publicOrigin) | quote }}
@@ -109,7 +109,7 @@ spec:
             - name: SESSION_COOKIE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.sessionCookieSecret }}
             - name: SESSION_COOKIE_NAME
               value: {{ $proxy.session.cookieName | quote }}
@@ -177,12 +177,12 @@ spec:
             - name: GEOSERVER_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.geoserverAdminUsername }}
             - name: GEOSERVER_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
                   key: {{ $.Values.secrets.runtime.keys.geoserverAdminPassword }}
             - name: GEOSERVER_BASE_PATH
               value: {{ $proxy.geoserver.basePath | quote }}

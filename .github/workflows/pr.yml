@@ -9,9 +9,26 @@ concurrency:
 permissions: {}
 
 jobs:
+  fork-gate:
+    name: fork-gate
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Reject fork PRs
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REPO" != "$BASE_REPO" ]]; then
+            echo "::error::PRs from forks do not run automatically. Re-land from an in-repo branch after review."
+            exit 1
+          fi
+
   # https://github.com/bcgov/action-builder-ghcr
   builds:
     name: Builds
+    needs: fork-gate
     permissions:
       attestations: write
       id-token: write
@@ -33,3 +50,23 @@ jobs:
             ${{ github.event.pull_request.head.sha }}
           tag_fallback: latest
           triggers: ('${{ matrix.package }}/', '.github/workflows/pr.yml')
+
+  results:
+    name: results
+    if: always()
+    needs: [fork-gate, builds]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Verify required jobs succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "Upstream results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [[ "${result}" == "failure" || "${result}" == "cancelled" ]]; then
+              echo "::error::A required job did not succeed (${result})."
+              exit 1
+            fi
+          done

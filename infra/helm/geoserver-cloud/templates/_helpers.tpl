@@ -40,6 +40,10 @@ app.kubernetes.io/component: {{ .serviceName }}
 {{- printf "%s-pguser-%s" .Values.database.crunchyReleaseName .Values.database.crunchyUserName -}}
 {{- end -}}
 
+{{- define "geoserver-cloud.runtimeSecretName" -}}
+{{- default (printf "%s-runtime" .Release.Name) .Values.secrets.runtime.name -}}
+{{- end -}}
+
 {{- define "geoserver-cloud.servicePort" -}}
 {{- $service := index .root.Values.services .name -}}
 {{- $config := mergeOverwrite (deepCopy .root.Values.serviceDefaults) $service -}}
@@ -104,7 +108,7 @@ imagePullSecrets:
 {{- end -}}
 
 {{- define "geoserver-cloud.runtimeSecretValue" -}}
-{{- $existing := lookup "v1" "Secret" .root.Release.Namespace .root.Values.secrets.runtime.name -}}
+{{- $existing := lookup "v1" "Secret" .root.Release.Namespace (include "geoserver-cloud.runtimeSecretName" .root) -}}
 {{- if and $existing $existing.data (hasKey $existing.data .key) -}}
 {{- index $existing.data .key | b64dec -}}
 {{- else -}}

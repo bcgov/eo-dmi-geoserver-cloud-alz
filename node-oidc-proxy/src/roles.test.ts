@@ -34,3 +34,17 @@ test("seed principal matching is case-insensitive", () => {
     "ROLE_ADMINISTRATOR",
   );
 });
+
+test("no configured seed principals keep users authenticated only", () => {
+  assert.equal(
+    rolesForPrincipal("anyone@example.com", [], "ROLE_ADMINISTRATOR"),
+    "ROLE_AUTHENTICATED",
+  );
+});
+
+test("blank principals never receive a privileged role", () => {
+  assert.equal(
+    rolesForPrincipal("   ", ["seed@example.com"], "ROLE_ADMINISTRATOR"),
+    "ROLE_AUTHENTICATED",
+  );
+});

@@ -105,12 +105,12 @@ spec:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
                   key: {{ .Values.secrets.runtime.keys.rabbitmqUsername }}
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
                   key: {{ .Values.secrets.runtime.keys.rabbitmqPassword }}
             - name: RABBITMQ_DEFAULT_VHOST
               value: /
@@ -122,7 +122,7 @@ spec:
             - name: RABBITMQ_ERLANG_COOKIE
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.runtime.name }}
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
                   key: {{ .Values.secrets.runtime.keys.rabbitmqErlangCookie }}
           volumeMounts:
             - name: rabbitmq-data
