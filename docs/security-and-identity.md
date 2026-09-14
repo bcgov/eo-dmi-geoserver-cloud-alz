@@ -58,8 +58,9 @@ Therefore:
 - `idir_user_guid` is retained for audit and the IDIR reference page. It is not
   the active GeoServer principal in the current deployment.
 - `display_name` is optional and is used for UI presentation.
-- `sec-roles` is set from `OIDC_ROLES`. The current value is
-  `ROLE_ADMINISTRATOR` for every authenticated OIDC session.
+- `sec-roles` is set to `OIDC_ROLES` for principals listed in
+  `GEOSERVER_ADMIN_PRINCIPALS`. Other authenticated OIDC sessions receive
+  GeoServer's built-in `ROLE_AUTHENTICATED` authority.
 
 Changing the principal claim is an identity migration. It requires changes to
 GeoServer users, roles, ACL rules, tests, and any catalog entries that use a

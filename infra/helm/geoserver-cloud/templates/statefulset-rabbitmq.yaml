@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.rabbitmq.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  serviceName: {{ .Values.rabbitmq.serviceName }}
+  replicas: {{ .Values.rabbitmq.replicas }}
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: rabbitmq
+  template:
+    metadata:
+      labels:
+        {{- include "geoserver-cloud.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rabbitmq
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.rabbitmq.terminationGracePeriodSeconds }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "geoserver-cloud.imagePullSecrets" . | nindent 6 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: rabbitmq
+                    app.kubernetes.io/instance: {{ .Release.Name }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: rabbitmq
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      volumes:
+        - name: scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+      # Kubernetes' fsGroup-based volume ownership management can re-widen
+      # .erlang.cookie's permissions on every fresh mount of the PVC (e.g. every
+      # pod recreation), even when the file's content already matches
+      # RABBITMQ_ERLANG_COOKIE and the main image's entrypoint therefore skips
+      # re-chmod'ing it. This unconditionally fixes the mode before rabbitmq
+      # starts, regardless of what the entrypoint does or doesn't do.
+      initContainers:
+        - name: fix-cookie-permissions
+          image: {{ include "geoserver-cloud.image" (dict "root" . "name" "rabbitmq") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          command:
+            - sh
+            - -ec
+            - |
+              if [ -f /var/lib/rabbitmq/.erlang.cookie ]; then
+                chmod 600 /var/lib/rabbitmq/.erlang.cookie
+              fi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+      containers:
+        - name: rabbitmq
+          image: {{ include "geoserver-cloud.image" (dict "root" . "name" "rabbitmq") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: amqp
+              containerPort: 5672
+              protocol: TCP
+            - name: management
+              containerPort: 15672
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
+                  key: {{ .Values.secrets.runtime.keys.rabbitmqUsername }}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
+                  key: {{ .Values.secrets.runtime.keys.rabbitmqPassword }}
+            - name: RABBITMQ_DEFAULT_VHOST
+              value: /
+            # Forces the entrypoint to (re)write and chmod 600 .erlang.cookie on every
+            # start, self-healing permission drift that Kubernetes' fsGroup-based volume
+            # ownership management can introduce on the PVC across pod restarts - without
+            # this, Erlang's owner-only cookie-file check can fail with "must be
+            # accessible by owner only" even though the file was created correctly.
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" . }}
+                  key: {{ .Values.secrets.runtime.keys.rabbitmqErlangCookie }}
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+            - name: scratch
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            failureThreshold: 3
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            failureThreshold: 6
+            periodSeconds: 10
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: rabbitmq-data
+        labels:
+          {{- include "geoserver-cloud.labels" . | nindent 10 }}
+          app.kubernetes.io/component: rabbitmq
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.rabbitmq.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.rabbitmq.storage.size }}

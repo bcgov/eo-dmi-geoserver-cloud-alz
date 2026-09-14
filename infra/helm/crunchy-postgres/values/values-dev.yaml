@@ -1,0 +1,6 @@
+crunchy:
+  instances:
+    replicas: 1
+  pgBackRest:
+    s3:
+      enabled: false

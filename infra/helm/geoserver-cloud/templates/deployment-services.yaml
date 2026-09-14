@@ -1,0 +1,319 @@
+{{- range $name, $service := .Values.services }}
+{{- $config := mergeOverwrite (deepCopy $.Values.serviceDefaults) $service }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "geoserver-cloud.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if not $config.autoscaling.enabled }}
+  replicas: {{ $config.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "geoserver-cloud.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-config.yaml") $ | sha256sum }}
+      labels:
+        {{- include "geoserver-cloud.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      terminationGracePeriodSeconds: {{ $config.terminationGracePeriodSeconds }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "geoserver-cloud.imagePullSecrets" $ | nindent 6 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: {{ $name }}
+                    app.kubernetes.io/instance: {{ $.Release.Name }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: {{ $name }}
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+      volumes:
+        - name: scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        {{- if ne $name "acl" }}
+        - name: gwc-cache
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: deployment-config
+          configMap:
+            name: {{ include "geoserver-cloud.fullname" $ }}-config
+        {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "geoserver-cloud.image" (dict "root" $ "name" $config.image) }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+          env:
+            {{- if eq $name "acl" }}
+            # ACL does not get the shared deployment-config ConfigMap (see the
+            # volumes block below), so it never inherits geoserver_spring.yml's
+            # management.* settings. Without these, /actuator/health/liveness and
+            # /actuator/health/readiness (used by every probe below) don't exist
+            # and the probes 404 forever, so acl can never become Ready.
+            - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
+              value: "true"
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "*"
+            # This image defaults management.server.port to 8081, a separate
+            # Tomcat connector from the app's own port 8080 (context path
+            # /acl). The probes below only target the "http" (8080) port, so
+            # actuator must be unified onto it or the probes can never see it.
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8080"
+            - name: PG_HOST
+              value: {{ include "geoserver-cloud.databaseHost" $ | quote }}
+            - name: PG_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: port
+            - name: PG_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: dbname
+            - name: PG_SCHEMA
+              value: acl
+            - name: PG_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: user
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: password
+            - name: GEOSERVER_BUS_ENABLED
+              value: "true"
+            - name: RABBITMQ_HOST
+              value: {{ $.Values.rabbitmq.serviceName | quote }}
+            - name: RABBITMQ_PORT
+              value: {{ $.Values.rabbitmq.port | quote }}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.rabbitmqUsername }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.rabbitmqPassword }}
+            - name: ACL_USERS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.aclAdminPassword }}
+            - name: ACL_USERS_GEOSERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.aclGeoserverPassword }}
+            {{- else }}
+            {{- $springProfiles := "standalone,pgconfig,acl,environment-admin-auth" }}
+            {{- if hasKey $config.extraEnv "SPRING_PROFILES_ACTIVE" }}
+            {{- $springProfiles = index $config.extraEnv "SPRING_PROFILES_ACTIVE" }}
+            {{- end }}
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: /etc/gscloud/deployment-config/
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ $springProfiles | quote }}
+            {{- if eq $name "gateway" }}
+            # gateway.yml derives every route's Path predicate and StripBasePath
+            # filter from geoserver.base-path (env GEOSERVER_BASE_PATH), which
+            # otherwise defaults to empty. Without this, the gateway only
+            # matches bare /web/**, /wms, etc. - not the
+            # proxy.geoserver.basePath-prefixed paths (e.g. /geoserver/cloud/web/)
+            # the OIDC proxy actually forwards, so every request 404s upstream.
+            - name: GEOSERVER_BASE_PATH
+              value: {{ $.Values.proxy.geoserver.basePath | quote }}
+            # Pin every backend target explicitly to this chart's actual K8s
+            # Service names. Observed in practice: the "rest" route resolved to
+            # http://restconfig:8080 (NXDOMAIN) despite gateway.yml's own
+            # ${TARGETS_REST:http://rest:8080} default - something baked into
+            # the gateway image (profile-specific config, activated for one of
+            # its active profiles) was winning over that default. A literal env
+            # var sits above all classpath/config-location YAML in Spring's
+            # property precedence regardless of profile activation, so this is
+            # the reliable way to guarantee every target matches our Services.
+            - name: TARGETS_ACL
+              value: {{ printf "http://acl:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "acl"))) }}
+            - name: TARGETS_WFS
+              value: {{ printf "http://wfs:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wfs"))) }}
+            - name: TARGETS_WMS
+              value: {{ printf "http://wms:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wms"))) }}
+            - name: TARGETS_WCS
+              value: {{ printf "http://wcs:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wcs"))) }}
+            - name: TARGETS_WPS
+              value: {{ printf "http://wps:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wps"))) }}
+            - name: TARGETS_REST
+              value: {{ printf "http://rest:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "rest"))) }}
+            - name: TARGETS_GWC
+              value: {{ printf "http://gwc:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "gwc"))) }}
+            - name: TARGETS_WEBUI
+              value: {{ printf "http://webui:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "webui"))) }}
+            - name: TARGETS_WEBUI_DEMO
+              value: {{ printf "http://webui:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "webui"))) }}
+            {{- end }}
+            # This image defaults management.server.port to 8081, a separate
+            # connector from the app's own port 8080 - same root cause as the
+            # acl container above. The probes below only target the "http"
+            # (8080) port, so actuator must be unified onto it.
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8080"
+            # webui/wms/rest/gwc bundle GeoWebCache integration, which defaults
+            # to /opt/app/data_directory/gwc - unwritable under
+            # readOnlyRootFilesystem with no volume mounted there. Redirect it
+            # onto a bounded disk-backed emptyDir at an independent path. Keeping
+            # the cache outside the RAM-backed scratch volume prevents tile
+            # growth from consuming the pod's memory limit.
+            - name: GWC_CACHE_DIRECTORY
+              value: /var/cache/geoserver
+            - name: PGCONFIG_HOST
+              value: {{ include "geoserver-cloud.databaseHost" $ | quote }}
+            - name: PGCONFIG_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: port
+            - name: PGCONFIG_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: dbname
+            - name: PGCONFIG_SCHEMA
+              value: {{ $.Values.database.schema | quote }}
+            - name: PGCONFIG_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: user
+            - name: PGCONFIG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" $ }}
+                  key: password
+            - name: PGCONFIG_INITIALIZE
+              value: "true"
+            - name: GEOSERVER_BUS_ENABLED
+              value: "true"
+            - name: RABBITMQ_HOST
+              value: {{ $.Values.rabbitmq.serviceName | quote }}
+            - name: RABBITMQ_PORT
+              value: {{ $.Values.rabbitmq.port | quote }}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.rabbitmqUsername }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.rabbitmqPassword }}
+            - name: ACL_URL
+              value: {{ printf "http://acl:%d/acl/api" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "acl"))) }}
+            - name: ACL_ENABLED
+              value: {{ if eq $name "wps" }}"false"{{ else }}"true"{{ end }}
+            - name: ACL_USERNAME
+              value: geoserver
+            - name: ACL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.aclGeoserverPasswordPlain }}
+            - name: GEOSERVER_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.geoserverAdminUsername }}
+            - name: GEOSERVER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.runtimeSecretName" $ }}
+                  key: {{ $.Values.secrets.runtime.keys.geoserverAdminPassword }}
+            {{- end }}
+            {{- range $envName, $envValue := $config.extraEnv }}
+            {{- if ne $envName "SPRING_PROFILES_ACTIVE" }}
+            - name: {{ $envName }}
+              value: {{ $envValue | quote }}
+            {{- end }}
+            {{- end }}
+          {{- if ne $name "acl" }}
+          volumeMounts:
+            - name: deployment-config
+              mountPath: /etc/gscloud/deployment-config
+              readOnly: true
+            - name: gwc-cache
+              mountPath: /var/cache/geoserver
+            - name: scratch
+              mountPath: /tmp
+          {{- else }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: {{ $config.probes.startup.path }}
+              port: http
+            failureThreshold: {{ $config.probes.startup.failureThreshold }}
+            periodSeconds: {{ $config.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ $config.probes.startup.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ $config.probes.liveness.path }}
+              port: http
+            failureThreshold: {{ $config.probes.liveness.failureThreshold }}
+            periodSeconds: {{ $config.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $config.probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ $config.probes.readiness.path }}
+              port: http
+            failureThreshold: {{ $config.probes.readiness.failureThreshold }}
+            periodSeconds: {{ $config.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $config.probes.readiness.timeoutSeconds }}
+{{- end }}

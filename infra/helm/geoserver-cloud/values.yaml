@@ -1,0 +1,286 @@
+global:
+  imagePullSecrets:
+    - name: artifactory-creds
+  imagePullPolicy: IfNotPresent
+  artifactory:
+    registry: artifacts.developer.gov.bc.ca
+    dockerHubRepository: docker-remote
+    localRepository: bcgov-docker-local
+
+nameOverride: ""
+fullnameOverride: ""
+
+images:
+  gateway:
+    path: geoservercloud/geoserver-cloud-gateway
+    tag: "3.0.1"
+  webui:
+    path: geoservercloud/geoserver-cloud-webui
+    tag: "3.0.1"
+  wms:
+    path: geoservercloud/geoserver-cloud-wms
+    tag: "3.0.1"
+  wfs:
+    path: geoservercloud/geoserver-cloud-wfs
+    tag: "3.0.1"
+  wcs:
+    path: geoservercloud/geoserver-cloud-wcs
+    tag: "3.0.1"
+  wps:
+    path: geoservercloud/geoserver-cloud-wps
+    tag: "3.0.1"
+  rest:
+    path: geoservercloud/geoserver-cloud-rest
+    tag: "3.0.1"
+  gwc:
+    path: geoservercloud/geoserver-cloud-gwc
+    tag: "3.0.1"
+  acl:
+    path: geoservercloud/geoserver-acl
+    tag: "3.0.1"
+  rabbitmq:
+    path: library/rabbitmq
+    tag: 4.0.9-management-alpine
+  initDb:
+    path: library/postgres
+    tag: "18-alpine"
+  proxy:
+    repository: local
+    path: node-oidc-proxy
+    tag: "9f778c5c5069a87abec9eecbd6666d5d9fcdac3c"
+
+serviceDefaults:
+  port: 8080
+  replicas: 2
+  terminationGracePeriodSeconds: 60
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 30
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+  probes:
+    startup:
+      path: /actuator/health/liveness
+      failureThreshold: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    liveness:
+      path: /actuator/health/liveness
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      path: /actuator/health/readiness
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+  extraEnv: {}
+
+services:
+  gateway:
+    image: gateway
+  webui:
+    image: webui
+    replicas: 1
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 1
+      targetCPUUtilizationPercentage: 70
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  wms:
+    image: wms
+    replicas: 2
+  wfs:
+    image: wfs
+    replicas: 2
+  wcs:
+    image: wcs
+    replicas: 2
+  wps:
+    image: wps
+    replicas: 2
+    extraEnv:
+      SPRING_PROFILES_ACTIVE: standalone,pgconfig,environment-admin-auth
+  rest:
+    image: rest
+    replicas: 2
+  gwc:
+    image: gwc
+    replicas: 2
+  acl:
+    image: acl
+    replicas: 2
+    # ACL's Tomcat context path is /acl (baked into this image, distinct from
+    # the other services which run at root /), so its actuator endpoints are
+    # nested under /acl/actuator/... rather than the bare /actuator/... path
+    # serviceDefaults.probes uses for everything else.
+    probes:
+      startup:
+        path: /acl/actuator/health/liveness
+        failureThreshold: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+      liveness:
+        path: /acl/actuator/health/liveness
+        periodSeconds: 20
+        timeoutSeconds: 5
+        failureThreshold: 3
+      readiness:
+        path: /acl/actuator/health/readiness
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 6
+
+proxy:
+  enabled: true
+  serviceName: oidc-proxy
+  port: 8080
+  replicas: 1
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 30
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+  probes:
+    startup:
+      path: /healthz
+      failureThreshold: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    liveness:
+      path: /healthz
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      path: /healthz
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+  gatewayOrigin: ""
+  publicOrigin: ""
+  route:
+    enabled: true
+    host: ""
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+  oidc:
+    issuer: https://loginproxy.example.com/auth/realms/standard
+    clientId: geoserver-cloud-openshift
+    scopes: openid profile email
+  session:
+    cookieName: gs_sso
+    maxAgeSeconds: 43200
+  identity:
+    identityHeader: sec-username
+    rolesHeader: sec-roles
+    oidcRoles: ROLE_ADMINISTRATOR
+    usernameClaim: email
+    usernameLowercase: true
+    userGuidClaim: idir_user_guid
+    displayNameHeader: sec-user-display-name
+    displayNameClaim: display_name
+  machineAuthPassthrough: true
+  defaultReturnTo: /geoserver/cloud/web/
+  gatewayTlsInsecure: false
+  gatewayConnectTimeoutMs: 90000
+  gatewayReadTimeoutMs: 180000
+  logLevel: info
+  debugHeaders: false
+  debugUnsafeHeaders: false
+  geoserver:
+    basePath: /geoserver/cloud
+    userGroupService: default
+    # Comma-separated lower-case OIDC principals that retain proxy.oidc.oidcRoles.
+    # All other authenticated OIDC users receive ROLE_AUTHENTICATED.
+    adminPrincipals: ""
+  extraEnv: {}
+
+database:
+  crunchyReleaseName: crunchy-postgres
+  crunchyUserName: geoserverproxy
+  schema: pgconfig
+
+rabbitmq:
+  serviceName: rabbitmq
+  port: "5672"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 150m
+      memory: 512Mi
+  storage:
+    size: 500Mi
+    storageClassName: netapp-block-standard
+  terminationGracePeriodSeconds: 120
+
+secrets:
+  runtime:
+    name: ""
+    keys:
+      rabbitmqUsername: rabbitmq-username
+      rabbitmqPassword: rabbitmq-password
+      geoserverAdminUsername: geoserver-admin-username
+      geoserverAdminPassword: geoserver-admin-password
+      aclAdminPassword: acl-admin-password
+      aclGeoserverPassword: acl-geoserver-password
+      aclGeoserverPasswordPlain: acl-geoserver-password-plain
+      oidcClientSecret: oidc-client-secret
+      sessionCookieSecret: session-cookie-secret
+      rabbitmqErlangCookie: rabbitmq-erlang-cookie
+
+initDatabase:
+  enabled: true
+  image: initDb
+  backoffLimit: 6
+  activeDeadlineSeconds: 1800
+  terminationGracePeriodSeconds: 30

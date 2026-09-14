@@ -1,0 +1,6 @@
+apiVersion: v2
+name: geoserver-cloud
+description: Node OIDC proxy, GeoServer Cloud, and its OpenShift runtime dependencies.
+type: application
+version: 0.1.0
+appVersion: "3.0.1"

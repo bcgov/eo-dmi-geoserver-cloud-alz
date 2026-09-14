@@ -1,0 +1,69 @@
+{{- range $name, $service := .Values.services }}
+{{- $config := mergeOverwrite (deepCopy $.Values.serviceDefaults) $service }}
+{{- if $config.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "geoserver-cloud.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $config.autoscaling.minReplicas }}
+  maxReplicas: {{ $config.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $config.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ $config.autoscaling.behavior.scaleUp.stabilizationWindowSeconds }}
+      policies:
+        {{- toYaml $config.autoscaling.behavior.scaleUp.policies | nindent 8 }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ $config.autoscaling.behavior.scaleDown.stabilizationWindowSeconds }}
+      policies:
+        {{- toYaml $config.autoscaling.behavior.scaleDown.policies | nindent 8 }}
+{{- end }}
+{{- end }}
+{{- if and .Values.proxy.enabled .Values.proxy.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.proxy.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oidc-proxy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.proxy.serviceName }}
+  minReplicas: {{ .Values.proxy.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.proxy.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.proxy.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.proxy.autoscaling.behavior.scaleUp.stabilizationWindowSeconds }}
+      policies:
+        {{- toYaml .Values.proxy.autoscaling.behavior.scaleUp.policies | nindent 8 }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.proxy.autoscaling.behavior.scaleDown.stabilizationWindowSeconds }}
+      policies:
+        {{- toYaml .Values.proxy.autoscaling.behavior.scaleDown.policies | nindent 8 }}
+{{- end }}

@@ -12,9 +12,9 @@
  * the full error on failure (these calls are fire-and-forget, so without logs a
  * failure here is completely invisible).
  */
-import pg from 'pg';
-import { config } from './config.ts';
-import { logger } from './logger.ts';
+import pg from "pg";
+import { config } from "./config.ts";
+import { logger } from "./logger.ts";
 
 let pool: pg.Pool | undefined;
 
@@ -29,15 +29,26 @@ function getPool(): pg.Pool | undefined {
       database,
       user: username,
       password,
-      ssl: { rejectUnauthorized: false }, // private endpoint, no public CA needed
+      // Azure: private endpoint requires SSL but has no public CA to verify.
+      // Self-hosted (e.g. Crunchy via pgBouncer with client_tls_sslmode
+      // disabled) rejects SSL negotiation outright, so this must be off there.
+      // PGCONFIG_SSL=false disables encryption in transit entirely; it does
+      // not only disable certificate verification.
+      ssl: config.db.sslEnabled ? { rejectUnauthorized: false } : false,
       max: 2,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });
-    pool.on('error', (err: Error) => {
-      logger.error({ ev: 'db:pool-error', err: err.message }, 'pg pool background error');
+    pool.on("error", (err: Error) => {
+      logger.error(
+        { ev: "db:pool-error", err: err.message },
+        "pg pool background error",
+      );
     });
-    logger.info({ ev: 'db:pool-init', host, port: config.db.port, database }, 'pg pool initialised for user auto-registration');
+    logger.info(
+      { ev: "db:pool-init", host, port: config.db.port, database },
+      "pg pool initialised for user auto-registration",
+    );
   }
   return pool;
 }
@@ -55,11 +66,17 @@ export async function upsertUser(
 ): Promise<void> {
   const p = getPool();
   if (!p) {
-    logger.debug({ ev: 'db:upsert-skip', reason: 'db-not-configured', email }, 'upsertUser skipped — PGCONFIG_* not set');
+    logger.debug(
+      { ev: "db:upsert-skip", reason: "db-not-configured", email },
+      "upsertUser skipped — PGCONFIG_* not set",
+    );
     return;
   }
   if (!guid) {
-    logger.warn({ ev: 'db:upsert-skip', reason: 'no-guid', email }, 'upsertUser skipped — no IDIR GUID claim (the PK); check USER_GUID_CLAIM / token mapper');
+    logger.warn(
+      { ev: "db:upsert-skip", reason: "no-guid", email },
+      "upsertUser skipped — no IDIR GUID claim (the PK); check USER_GUID_CLAIM / token mapper",
+    );
     return;
   }
   try {
@@ -71,13 +88,13 @@ export async function upsertUser(
       [guid, email, displayName ?? email],
     );
     logger.info(
-      { ev: 'db:upsert-ok', guid, email, rowCount: result.rowCount },
-      'upserted user in gssec.user_display_names',
+      { ev: "db:upsert-ok", guid, email, rowCount: result.rowCount },
+      "upserted user in gssec.user_display_names",
     );
   } catch (err) {
     logger.warn(
-      { ev: 'db:upsert-error', err: (err as Error).message, guid, email },
-      'failed to upsert user into gssec — roles can still be assigned manually',
+      { ev: "db:upsert-error", err: (err as Error).message, guid, email },
+      "failed to upsert user into gssec — roles can still be assigned manually",
     );
   }
 }
@@ -100,7 +117,10 @@ export async function listUsers(): Promise<IdirUser[]> {
        FROM gssec.user_display_names
       ORDER BY display_name`,
   );
-  logger.debug({ ev: 'db:list-users', count: res.rowCount }, 'listed gssec.user_display_names');
+  logger.debug(
+    { ev: "db:list-users", count: res.rowCount },
+    "listed gssec.user_display_names",
+  );
   return res.rows.map((r) => ({
     guid: r.idir_user_guid as string,
     email: (r.email as string | null) ?? null,

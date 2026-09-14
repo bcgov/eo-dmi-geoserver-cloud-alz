@@ -1,0 +1,24 @@
+{{- if and .Values.proxy.enabled .Values.proxy.route.enabled }}
+{{- if not .Values.proxy.route.host }}
+{{- fail "proxy.route.host is required when proxy.route.enabled is true" }}
+{{- end }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .Values.proxy.serviceName }}
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oidc-proxy
+spec:
+  host: {{ .Values.proxy.route.host | quote }}
+  to:
+    kind: Service
+    name: {{ .Values.proxy.serviceName }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.proxy.route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.proxy.route.tls.insecureEdgeTerminationPolicy }}
+  wildcardPolicy: None
+{{- end }}

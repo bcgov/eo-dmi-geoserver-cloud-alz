@@ -1,0 +1,89 @@
+{{- if .Values.initDatabase.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "geoserver-cloud.fullname" . }}-init-database
+  labels:
+    {{- include "geoserver-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database-init
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.initDatabase.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.initDatabase.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "geoserver-cloud.labels" . | nindent 8 }}
+        app.kubernetes.io/component: database-init
+    spec:
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: {{ .Values.initDatabase.terminationGracePeriodSeconds }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "geoserver-cloud.imagePullSecrets" . | nindent 6 }}
+      volumes:
+        - name: scratch
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+      containers:
+        - name: init-database
+          image: {{ include "geoserver-cloud.image" (dict "root" . "name" .Values.initDatabase.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          env:
+            - name: PGHOST
+              value: {{ include "geoserver-cloud.databaseHost" . | quote }}
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" . }}
+                  key: port
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" . }}
+                  key: dbname
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" . }}
+                  key: user
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geoserver-cloud.databaseSecretName" . }}
+                  key: password
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for attempt in $(seq 1 90); do
+                if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; then
+                  break
+                fi
+                if [ "$attempt" -eq 90 ]; then
+                  echo "PostgreSQL did not become ready before the deadline" >&2
+                  exit 1
+                fi
+                sleep 10
+              done
+              psql -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA IF NOT EXISTS pgconfig; CREATE SCHEMA IF NOT EXISTS acl;'
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+{{- end }}

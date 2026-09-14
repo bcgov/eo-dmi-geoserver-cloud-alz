@@ -1,0 +1,18 @@
+{{- if and .Values.crunchy.enabled .Values.crunchy.pgBackRest.s3.enabled }}
+{{- if not .Values.crunchy.pgBackRest.s3.accessKey }}
+{{- fail "crunchy.pgBackRest.s3.accessKey is required when off-cluster pgBackRest backups are enabled" }}
+{{- end }}
+{{- if not .Values.crunchy.pgBackRest.s3.secretKey }}
+{{- fail "crunchy.pgBackRest.s3.secretKey is required when off-cluster pgBackRest backups are enabled" }}
+{{- end }}
+{{- if not .Values.crunchy.pgBackRest.s3.bucket }}
+{{- fail "crunchy.pgBackRest.s3.bucket is required when off-cluster pgBackRest backups are enabled" }}
+{{- end }}
+{{- if not .Values.crunchy.pgBackRest.s3.endpoint }}
+{{- fail "crunchy.pgBackRest.s3.endpoint is required when off-cluster pgBackRest backups are enabled" }}
+{{- end }}
+{{- end }}
+{{- $storageQuantityPattern := "^(?:(?:[1-9][0-9]{0,2}|10[0-1][0-9]|102[0-3]|1024)Mi|1Gi)$" -}}
+{{- if not (regexMatch $storageQuantityPattern (toString .Values.crunchy.pgBackRest.pvc.volume.storage)) }}
+{{- fail "crunchy.pgBackRest.pvc.volume.storage must be 1Gi or less" }}
+{{- end }}

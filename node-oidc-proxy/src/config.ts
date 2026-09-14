@@ -87,9 +87,9 @@ export const config = {
   // Header name for the GeoServer role set; must start with "sec-" so the proxy
   // strips client-injected values before re-injecting the trusted value.
   rolesHeader: optional("GS_ROLES_HEADER", "sec-roles").toLowerCase(),
-  // Comma-separated GeoServer roles injected for every OIDC-authenticated session.
-  // All IDIR users accessing this system are authorised operators; ROLE_ADMINISTRATOR
-  // is required for the GeoServer REST API. Fine-grained ACL is handled by geoserver-acl.
+  // Privileged GeoServer roles injected for configured seed/admin principals.
+  // Other OIDC users receive ROLE_AUTHENTICATED. Fine-grained data access is
+  // handled by geoserver-acl.
   oidcRoles: optional("OIDC_ROLES", "ROLE_ADMINISTRATOR"),
   // Principal injected as sec-username. Switched from the IDIR GUID to `email`
   // so GeoServer's UI shows an identifiable username; roles key on this value.
@@ -122,6 +122,11 @@ export const config = {
     database: optional("PGCONFIG_DATABASE", ""),
     username: optional("PGCONFIG_USERNAME", ""),
     password: optional("PGCONFIG_PASSWORD", ""),
+    // Azure's managed Postgres requires SSL; defaults to true to preserve that
+    // deployment's behavior. Self-hosted Postgres behind pgBouncer with
+    // client_tls_sslmode=disable (e.g. Crunchy on OpenShift) rejects any SSL
+    // negotiation outright, so that environment must set PGCONFIG_SSL=false.
+    sslEnabled: bool("PGCONFIG_SSL", true),
   },
 
   /**
@@ -140,8 +145,9 @@ export const config = {
   },
 
   /**
-   * Principals (lower-cased emails) allowed to view the /admin/idir-users
-   * reference page (display name ↔ email ↔ GUID). Empty → the page is disabled.
+   * Seed/admin principals (lower-cased emails). These retain oidcRoles and may
+   * view the /admin/idir-users reference page. Empty means no OIDC principal
+   * receives the privileged role and the page is disabled.
    */
   adminPrincipals: csvLower("GEOSERVER_ADMIN_PRINCIPALS"),
 

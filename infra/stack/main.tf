@@ -733,7 +733,8 @@ resource "azapi_resource" "proxy" {
           { name = "PUBLIC_ORIGIN", value = local.proxy_origin },
           { name = "GS_IDENTITY_HEADER", value = "sec-username" },
           # Roles header injected alongside the principal so GeoServer's headerAuth filter
-          # (roleSource=Header) can grant ROLE_ADMINISTRATOR without a role-service lookup.
+          # (roleSource=Header) can grant the privileged role to seed/admin principals
+          # without a role-service lookup. Other OIDC principals receive ROLE_AUTHENTICATED.
           { name = "GS_ROLES_HEADER", value = "sec-roles" },
           { name = "OIDC_ROLES", value = "ROLE_ADMINISTRATOR" },
           # Principal injected as sec-username. `email` (lower-cased) so GeoServer's UI
@@ -778,7 +779,8 @@ resource "azapi_resource" "proxy" {
           { name = "GEOSERVER_ADMIN_USERNAME", value = "admin" },
           { name = "GEOSERVER_BASE_PATH", value = "/geoserver/cloud" },
           { name = "GEOSERVER_ADMIN_PASSWORD", value = "@Microsoft.KeyVault(VaultName=${var.key_vault_name};SecretName=geoserver-admin-password)" },
-          # Emails allowed to view the proxy's /admin/idir-users reference page (name <-> email <-> GUID).
+          # Seed/admin emails: retain OIDC_ROLES and view the proxy's /admin/idir-users
+          # reference page (name <-> email <-> GUID). Other OIDC users get ROLE_AUTHENTICATED.
           { name = "GEOSERVER_ADMIN_PRINCIPALS", value = var.admin_idir_principal },
         ]
       }

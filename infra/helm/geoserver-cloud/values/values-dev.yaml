@@ -1,0 +1,41 @@
+global:
+  imagePullSecrets:
+    - name: artifactory-creds
+  artifactory:
+    dockerHubRepository: docker-remote
+
+serviceDefaults:
+  replicas: 1
+  autoscaling:
+    enabled: false
+
+services:
+  gateway:
+    replicas: 1
+  webui:
+    replicas: 1
+  wms:
+    replicas: 1
+  wfs:
+    replicas: 1
+  wcs:
+    replicas: 1
+  wps:
+    replicas: 1
+  rest:
+    replicas: 1
+  gwc:
+    replicas: 1
+  acl:
+    replicas: 1
+
+proxy:
+  publicOrigin: https://eo-dmi-geoserver-dev.apps.silver.devops.gov.bc.ca
+  route:
+    host: eo-dmi-geoserver-dev.apps.silver.devops.gov.bc.ca
+  oidc:
+    issuer: https://test.loginproxy.gov.bc.ca/auth/realms/standard
+    clientId: eo-dmi-geoserver-cloud-alz-6502
+
+rabbitmq:
+  replicas: 1
