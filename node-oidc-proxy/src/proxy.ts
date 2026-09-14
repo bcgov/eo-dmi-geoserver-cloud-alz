@@ -20,47 +20,51 @@
  * removed it before forwarding. If that is false while an identity is injected,
  * the stale-anonymous-session shadowing is back.
  */
-import http from 'node:http';
-import https from 'node:https';
-import type { IncomingHttpHeaders } from 'node:http';
-import type { Request, Response } from 'express';
-import { config } from './config.ts';
-import { logger } from './logger.ts';
+import http from "node:http";
+import https from "node:https";
+import type { IncomingHttpHeaders } from "node:http";
+import type { Request, Response } from "express";
+import { config } from "./config.ts";
+import { logger } from "./logger.ts";
 import {
   getReqId,
   reqElapsedMs,
   sanitizeHeaders,
   summarizeCookie,
   summarizeSetCookie,
-} from './debug.ts';
+} from "./debug.ts";
+import { rolesForPrincipal } from "./roles.ts";
 
 /** Hop-by-hop headers must not be forwarded (RFC 7230 §6.1). */
 const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
   // Strip WWW-Authenticate from upstream: forwarding it triggers browser native
   // Basic-auth dialogs when GeoServer returns 401. The proxy owns auth; any 401
   // reaching the browser should prompt a silent OIDC redirect, not a dialog box.
-  'www-authenticate',
+  "www-authenticate",
 ]);
 
 /** Identity-bearing prefixes that clients must never be able to spoof. */
-const SPOOFABLE_PREFIXES = ['sec-', 'x-gsc-'];
+const SPOOFABLE_PREFIXES = ["sec-", "x-gsc-"];
 
 const gatewayUrl = new URL(config.gateway.origin);
-const isHttps = gatewayUrl.protocol === 'https:';
+const isHttps = gatewayUrl.protocol === "https:";
 const transport = isHttps ? https : http;
 const publicHost = new URL(config.publicOrigin).host;
 
 // Reuse a keep-alive agent for upstream connections.
 const agent = isHttps
-  ? new https.Agent({ keepAlive: true, rejectUnauthorized: !config.gateway.tlsInsecure })
+  ? new https.Agent({
+      keepAlive: true,
+      rejectUnauthorized: !config.gateway.tlsInsecure,
+    })
   : new http.Agent({ keepAlive: true });
 
 function isSpoofable(name: string): boolean {
@@ -79,9 +83,11 @@ export interface InjectedIdentity {
 }
 
 /** Coerce a header value (string | string[] | undefined) to a string for inspection. */
-function headerToString(value: string | string[] | undefined): string | undefined {
+function headerToString(
+  value: string | string[] | undefined,
+): string | undefined {
   if (value === undefined) return undefined;
-  return Array.isArray(value) ? value.join('; ') : value;
+  return Array.isArray(value) ? value.join("; ") : value;
 }
 
 /**
@@ -89,42 +95,50 @@ function headerToString(value: string | string[] | undefined): string | undefine
  * spoofable identity headers, then set forwarded headers and (optionally) the
  * trusted identity headers.
  */
-function buildHeaders(req: Request, identity: InjectedIdentity | undefined): IncomingHttpHeaders {
+function buildHeaders(
+  req: Request,
+  identity: InjectedIdentity | undefined,
+): IncomingHttpHeaders {
   const out: IncomingHttpHeaders = {};
 
   for (const [name, value] of Object.entries(req.headers)) {
     const lower = name.toLowerCase();
     if (HOP_BY_HOP.has(lower)) continue;
     if (isSpoofable(lower)) continue; // overwrite, never pass through
-    if (lower === 'host') continue; // set explicitly below
+    if (lower === "host") continue; // set explicitly below
     // Forward cookies — including JSESSIONID_webui — UNCHANGED so the Wicket web
     // UI keeps its server-side session and stateful page navigation works.
     if (value !== undefined) out[lower] = value;
   }
 
   // Upstream sees the internal gateway host.
-  out['host'] = gatewayUrl.host;
+  out["host"] = gatewayUrl.host;
 
   // Forwarded headers from configured public origin, not client-supplied Host.
-  out['x-forwarded-host'] = publicHost;
-  out['x-forwarded-proto'] = 'https';
-  out['x-forwarded-port'] = '443';
+  out["x-forwarded-host"] = publicHost;
+  out["x-forwarded-proto"] = "https";
+  out["x-forwarded-port"] = "443";
 
   // Append this hop's client IP to the existing chain (don't overwrite).
-  const clientIp = req.socket.remoteAddress ?? '';
-  const priorXff = req.headers['x-forwarded-for'];
-  const chain = Array.isArray(priorXff) ? priorXff.join(', ') : priorXff;
-  out['x-forwarded-for'] = chain ? `${chain}, ${clientIp}` : clientIp;
+  const clientIp = req.socket.remoteAddress ?? "";
+  const priorXff = req.headers["x-forwarded-for"];
+  const chain = Array.isArray(priorXff) ? priorXff.join(", ") : priorXff;
+  out["x-forwarded-for"] = chain ? `${chain}, ${clientIp}` : clientIp;
 
   // Inject the trusted identity headers only for authenticated sessions.
   // The display-name header is optional (the claim may be absent); the identity
   // header (principal/email) is what GeoServer authenticates and resolves roles from.
   // sec-roles carries the GeoServer role set for this session so headerAuth can use
-  // roleSource=Header instead of a role-service lookup (bypasses UGS/role-service
-  // issues for the REST API; sec-roles is stripped from inbound client requests above).
+  // roleSource=Header instead of a role-service lookup. Only configured seed
+  // principals receive the privileged role; every other authenticated principal
+  // receives GeoServer's built-in ROLE_AUTHENTICATED authority.
   if (identity) {
     out[config.identityHeader] = identity.username;
-    out[config.rolesHeader] = config.oidcRoles;
+    out[config.rolesHeader] = rolesForPrincipal(
+      identity.username,
+      config.adminPrincipals,
+      config.oidcRoles,
+    );
     if (identity.displayName) {
       out[config.displayNameHeader] = identity.displayName;
     }
@@ -153,19 +167,22 @@ export function proxy(
   // ---- Hop (2): proxy → gateway. What we are actually sending upstream. ----
   const inboundCookie = summarizeCookie(headerToString(req.headers.cookie));
   const outboundCookie = summarizeCookie(headerToString(headers.cookie));
-  const jsessionidStripped = inboundCookie.jsessionid && !outboundCookie.jsessionid;
+  const jsessionidStripped =
+    inboundCookie.jsessionid && !outboundCookie.jsessionid;
 
   logger.info(
     {
       reqId,
-      ev: 'proxy:upstream-request',
+      ev: "proxy:upstream-request",
       method: req.method,
       upstream: `${gatewayUrl.origin}${req.originalUrl}`,
       // Identity headers shown IN FULL — this is the value GeoServer authenticates.
       injected: identity
         ? {
             [config.identityHeader]: identity.username,
-            ...(identity.displayName ? { [config.displayNameHeader]: identity.displayName } : {}),
+            ...(identity.displayName
+              ? { [config.displayNameHeader]: identity.displayName }
+              : {}),
           }
         : null,
       jsessionidInbound: inboundCookie.jsessionid,
@@ -174,7 +191,7 @@ export function proxy(
       jsessionidStripped,
       ...(config.debug.headers ? { headers: sanitizeHeaders(headers) } : {}),
     },
-    'proxy:upstream-request',
+    "proxy:upstream-request",
   );
 
   // Typed as https options (a superset of http) so the http|https union call
@@ -193,24 +210,26 @@ export function proxy(
     clearTimeout(connectTimer);
 
     // ---- Hop (3): gateway → proxy. What GeoServer responded with. ----
-    const setCookie = summarizeSetCookie(upstreamRes.headers['set-cookie']);
+    const setCookie = summarizeSetCookie(upstreamRes.headers["set-cookie"]);
     logger.info(
       {
         reqId,
-        ev: 'proxy:upstream-response',
+        ev: "proxy:upstream-response",
         method: req.method,
         upstreamPath: req.originalUrl,
         status: upstreamRes.statusCode ?? null,
         durationMs: reqElapsedMs(req),
-        contentType: upstreamRes.headers['content-type'] ?? null,
+        contentType: upstreamRes.headers["content-type"] ?? null,
         // For the OIDC dance + post-login redirects, the Location chain matters.
-        location: upstreamRes.headers['location'] ?? null,
+        location: upstreamRes.headers["location"] ?? null,
         // Does GeoServer hand back a fresh JSESSIONID_webui on this response?
         setsJsessionid: setCookie.some((c) => c.isJsessionid),
         setCookie,
-        ...(config.debug.headers ? { headers: sanitizeHeaders(upstreamRes.headers) } : {}),
+        ...(config.debug.headers
+          ? { headers: sanitizeHeaders(upstreamRes.headers) }
+          : {}),
       },
-      'proxy:upstream-response',
+      "proxy:upstream-response",
     );
 
     // Copy status + response headers, dropping hop-by-hop. Set-Cookie passes
@@ -226,22 +245,28 @@ export function proxy(
 
   // Connect timeout: fail fast if the socket never establishes / responds.
   const connectTimer = setTimeout(() => {
-    upstream.destroy(new Error('upstream connect timeout'));
+    upstream.destroy(new Error("upstream connect timeout"));
   }, config.gateway.connectTimeoutMs);
 
   // Idle/read timeout once connected.
   upstream.setTimeout(config.gateway.readTimeoutMs, () => {
-    upstream.destroy(new Error('upstream read timeout'));
+    upstream.destroy(new Error("upstream read timeout"));
   });
 
-  upstream.on('error', (err) => {
+  upstream.on("error", (err) => {
     clearTimeout(connectTimer);
     logger.warn(
-      { reqId, ev: 'proxy:upstream-error', err: err.message, path: req.path, durationMs: reqElapsedMs(req) },
-      'upstream proxy error',
+      {
+        reqId,
+        ev: "proxy:upstream-error",
+        err: err.message,
+        path: req.path,
+        durationMs: reqElapsedMs(req),
+      },
+      "upstream proxy error",
     );
     if (!res.headersSent) {
-      res.status(502).json({ error: 'bad_gateway' });
+      res.status(502).json({ error: "bad_gateway" });
     } else {
       res.destroy();
     }
@@ -251,7 +276,7 @@ export function proxy(
   req.pipe(upstream);
 
   // If the client disconnects mid-flight, tear down the upstream request.
-  res.on('close', () => {
+  res.on("close", () => {
     clearTimeout(connectTimer);
     upstream.destroy();
   });

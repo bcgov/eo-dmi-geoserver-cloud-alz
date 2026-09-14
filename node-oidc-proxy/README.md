@@ -135,9 +135,9 @@ and secrets are never logged (pino redaction + careful call sites).
 ## Not in scope
 
 WebSockets (the 3.0 WebMVC gateway dropped WS routing). Role headers — GeoServer
-uses the injected `sec-roles` header through `headerAuth`; the current Terraform
-deployment gives OIDC sessions `ROLE_ADMINISTRATOR`. Fine-grained data access is
-handled by `geoserver-acl`.
+uses the injected `sec-roles` header through `headerAuth`; configured seed/admin
+principals retain `OIDC_ROLES`, while other OIDC sessions receive
+`ROLE_AUTHENTICATED`. Fine-grained data access is handled by `geoserver-acl`.
 
 ## Operations
 

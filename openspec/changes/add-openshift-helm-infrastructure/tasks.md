@@ -1,3 +1,5 @@
+# Implementation Tasks
+
 ## 1. Terraform infrastructure boundary
 
 - [x] 1.1 Compare `infra/stack/locals.tf`, `infra/deployment-config/`, and the pinned image variables with the Helm values contract for all eight GeoServer services, ACL, Crunchy Postgres, and RabbitMQ; record the Artifactory repository mapping for each image.
@@ -52,3 +54,13 @@
 - [ ] 8.3 Run `oc apply --dry-run=server -f -` on the separately rendered Crunchy and GeoServer manifests in the target namespace and resolve restricted-v2 SCC, quota, image-policy, dependency, and schema errors before installation.
 - [ ] 8.4 Run `infra/helm/deploy-geoserver-cloud.sh` for the development release; verify the script waits for Crunchy primary/replica readiness, the release-derived user Secret, and pgBouncer before installing GeoServer, then verify proxy OIDC login, probes, pgBackRest behavior, RabbitMQ PVC attachment, internal gateway routing, ACL access, RabbitMQ events, PostGIS availability, and rendering behavior.
 - [ ] 8.5 Test an application-only upgrade and `helm rollback` while preserving Crunchy Postgres and RabbitMQ persistent claims, then execute and document a pgBackRest backup and restore test for stateful version changes.
+
+## 9. Review follow-ups
+
+- [x] 9.1 Prevent ACL admin password `{noop}` double-prefixing, run schema initialization as a pre-install/pre-upgrade hook, and require environment-specific proxy host values.
+- [x] 9.2 Route the proxy image through Artifactory, add ConfigMap rollout checksums, and derive gateway and ACL targets from the configured Service ports.
+- [x] 9.3 Set explicit CPU and memory requests without resource limits; isolate the GWC cache from the memory-backed scratch volume; and keep the Wicket web UI at one replica without an HPA.
+- [x] 9.4 Base PDB creation on effective minimum replicas, remove the unreachable RabbitMQ PDB branch, and narrow PostgreSQL authentication to the private cluster range with SCRAM.
+- [x] 9.5 Support optional chart-managed pgBackRest S3 credentials when S3 backups are enabled and document RabbitMQ bootstrap-only credential rotation.
+- [x] 9.6 Remove credentials from `oc exec` arguments, replace GNU-only XML editing, add cross-platform `kubeconform` validation, and add focused Helm regression checks.
+- [x] 9.7 Cap every chart-managed PVC request at `1Gi`, reject larger overrides during Helm validation, and add rendered-manifest regression coverage.

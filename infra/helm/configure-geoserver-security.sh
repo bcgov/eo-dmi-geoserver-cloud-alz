@@ -270,17 +270,41 @@ load_admin_credentials() {
 
 # Runs curl inside the gateway pod against its own loopback (the same
 # network path the OIDC proxy uses), so no port-forward or tunnel is needed.
+curl_auth_config() {
+  local credentials="${ADMIN_USER}:${ADMIN_PASS}"
+  credentials="${credentials//\\/\\\\}"
+  credentials="${credentials//\"/\\\"}"
+  credentials="${credentials//$'\n'/}"
+  printf 'user = "%s"\n' "$credentials"
+}
+
 gs_curl() {
-  "$OC" exec -n "$NAMESPACE" "$GATEWAY_POD" -- curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
+  curl_auth_config | "$OC" exec -i -n "$NAMESPACE" "$GATEWAY_POD" -- curl -s -K - "$@"
 }
 
 # Same, but pipes a local file in as the request body via stdin (`oc exec -i`)
-# rather than trying to first get an arbitrary local payload onto the pod's
-# own filesystem.
+# rather than placing the payload in the remote command's argv. The request
+# body is staged in the pod because curl's stdin is reserved for its private
+# config, which keeps the Basic auth password out of the oc exec argv and
+# audit record.
 gs_curl_data() {
   local file="$1"
   shift
-  "$OC" exec -i -n "$NAMESPACE" "$GATEWAY_POD" -- curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" --data-binary @- "$@" < "$file"
+  local remote_file="/tmp/geoserver-security-payload-$$"
+  "$OC" exec -i -n "$NAMESPACE" "$GATEWAY_POD" -- sh -c 'cat > "$1"' sh "$remote_file" < "$file"
+  local upload_status=$?
+  if [[ "$upload_status" -ne 0 ]]; then
+    return "$upload_status"
+  fi
+
+  local curl_status=0
+  if gs_curl --data-binary "@${remote_file}" "$@"; then
+    curl_status=0
+  else
+    curl_status=$?
+  fi
+  "$OC" exec -n "$NAMESPACE" "$GATEWAY_POD" -- rm -f "$remote_file" >/dev/null 2>&1 || true
+  return "$curl_status"
 }
 
 # Returns just the HTTP status code of a gs_curl call via stdout. See the
@@ -307,8 +331,11 @@ gs_curl_data_status() {
 gs_curl_json_status() {
   local payload="$1"
   shift
+  new_temp_file
+  local payload_file="$NEW_TEMP_FILE"
+  printf '%s' "$payload" > "$payload_file"
   local raw
-  raw="$(gs_curl -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" -d "$payload" "$@" 2>/dev/null)" || true
+  raw="$(gs_curl_data_status "$payload_file" -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" "$@" 2>/dev/null)" || true
   raw="${raw:-000}"
   printf '%s' "${raw:0:3}"
 }
@@ -417,7 +444,7 @@ wire_header_auth_into_chains() {
       continue
     fi
     before="$(wc -c < "$config_file")"
-    sed -zi "s|<filters name=\"${chain}\" \([^>]*\)>|<filters name=\"${chain}\" \1><filter>headerAuth</filter>|" "$config_file"
+    CHAIN="$chain" perl -0pi -e 'my $chain = $ENV{"CHAIN"}; s{<filters name="\Q$chain\E" ([^>]*)>}{<filters name="$chain" $1><filter>headerAuth</filter>}g' "$config_file"
     after="$(wc -c < "$config_file")"
     if [[ "$after" -gt "$before" ]]; then
       log "  Injected headerAuth into ${chain} chain."
@@ -502,6 +529,7 @@ main() {
 
   require_command "$OC"
   require_command sed
+  require_command perl
   require_command base64
   require_command openssl
   [[ -n "$NAMESPACE" ]] || die "Namespace is required: pass --namespace NAME or set OPENSHIFT_NAMESPACE"

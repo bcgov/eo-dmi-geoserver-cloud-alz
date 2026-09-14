@@ -40,6 +40,12 @@ app.kubernetes.io/component: {{ .serviceName }}
 {{- printf "%s-pguser-%s" .Values.database.crunchyReleaseName .Values.database.crunchyUserName -}}
 {{- end -}}
 
+{{- define "geoserver-cloud.servicePort" -}}
+{{- $service := index .root.Values.services .name -}}
+{{- $config := mergeOverwrite (deepCopy .root.Values.serviceDefaults) $service -}}
+{{- $config.port -}}
+{{- end -}}
+
 {{- define "geoserver-cloud.image" -}}
 {{- $root := .root -}}
 {{- $image := index $root.Values.images .name -}}

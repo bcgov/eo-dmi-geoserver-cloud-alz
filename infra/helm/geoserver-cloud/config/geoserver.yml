@@ -19,7 +19,7 @@ geoserver:
   acl:
     client:
       enabled: ${ACL_ENABLED:false}
-      basePath: ${ACL_URL:http://acl:8080/acl/api}
+      basePath: ${ACL_URL}
       username: ${ACL_USERNAME:}
       password: ${ACL_PASSWORD:}
       caching: ${ACL_CACHING:true}

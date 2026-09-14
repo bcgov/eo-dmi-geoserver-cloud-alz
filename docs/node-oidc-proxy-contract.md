@@ -24,9 +24,10 @@ edge service can replace it without changing GeoServer's public base path.
   forwarding to the internal gateway. The deployed principal is the lower-case
   `email` claim, injected as `sec-username`. The stable `idir_user_guid` claim
   is stored for audit and reference, but is not the deployed principal.
-4. Inject `sec-roles` from `OIDC_ROLES` for authenticated OIDC sessions. The
-  current deployment sets this to `ROLE_ADMINISTRATOR`; GeoServer's
-  `headerAuth` filter uses the header role source.
+4. Inject `sec-roles` for authenticated OIDC sessions. Configured seed/admin
+  principals from `GEOSERVER_ADMIN_PRINCIPALS` receive `OIDC_ROLES`; all other
+  OIDC users receive GeoServer's built-in `ROLE_AUTHENTICATED` authority.
+  GeoServer's `headerAuth` filter uses the header role source.
 5. Reverse-proxy everything else to the internal gateway, **preserving path, query, method,
   body (streamed), and GeoServer cookies** (e.g. `JSESSIONID`).
 6. Set `X-Forwarded-*` so GeoServer generates correct absolute URLs.
@@ -71,11 +72,12 @@ edge service can replace it without changing GeoServer's public base path.
 ```text
 sec-username: <lower-case email>
 sec-user-display-name: <display_name>
-sec-roles: <OIDC_ROLES>
+sec-roles: <OIDC_ROLES for seed/admin principals, otherwise ROLE_AUTHENTICATED>
 ```
 
 (The display name is optional and is used by the GeoServer UI. The role value is
-the configured comma-separated `OIDC_ROLES` value.)
+`OIDC_ROLES` for configured seed/admin principals and `ROLE_AUTHENTICATED` for
+all other OIDC users.)
 
 **Always strip from the inbound client request before forwarding (anti-spoofing), regardless of auth state:**
 
@@ -201,7 +203,8 @@ must reject identities without an appropriate rule.
 | `PUBLIC_ORIGIN` | `https://<public-host>` | For `X-Forwarded-Host` + redirect building. |
 | `GS_IDENTITY_HEADER` | `sec-username` | Header name injected to GeoServer. Must match `principalHeaderAttribute` in `headerAuth`. |
 | `GS_ROLES_HEADER` | `sec-roles` | Header name for roles. Must match `rolesHeaderAttribute` in `headerAuth`. |
-| `OIDC_ROLES` | `ROLE_ADMINISTRATOR` | Comma-separated roles injected into `sec-roles` for every OIDC session. |
+| `OIDC_ROLES` | `ROLE_ADMINISTRATOR` | Comma-separated privileged roles injected for `GEOSERVER_ADMIN_PRINCIPALS`. |
+| `GEOSERVER_ADMIN_PRINCIPALS` | configured seed email(s) | Comma-separated lower-case OIDC principals that retain `OIDC_ROLES` and can view `/admin/idir-users`. |
 | `USERNAME_CLAIM` | `email` | Keycloak claim extracted and injected as `sec-username`. |
 | `USERNAME_LOWERCASE` | `true` in Terraform | Lower-cases the configured principal. |
 | `USER_GUID_CLAIM` | `idir_user_guid` | Optional stable IDIR identifier retained for audit/reference. |

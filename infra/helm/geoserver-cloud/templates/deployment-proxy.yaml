@@ -1,6 +1,10 @@
 {{- if .Values.proxy.enabled }}
 {{- $proxy := .Values.proxy }}
 {{- $publicOrigin := $proxy.publicOrigin }}
+{{- $gatewayOrigin := $proxy.gatewayOrigin }}
+{{- if not $gatewayOrigin }}
+{{- $gatewayOrigin = printf "http://gateway:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "gateway"))) }}
+{{- end }}
 {{- if not $publicOrigin }}
 {{- if and $proxy.route.enabled $proxy.route.host }}
 {{- $publicOrigin = printf "https://%s" $proxy.route.host }}
@@ -69,7 +73,7 @@ spec:
             sizeLimit: 256Mi
       containers:
         - name: oidc-proxy
-          image: ghcr.io/bcgov/eo-dmi-geoserver-cloud-alz/node-oidc-proxy:{{ .Values.images.proxy.tag }}
+          image: {{ include "geoserver-cloud.image" (dict "root" $ "name" "proxy") }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
           ports:
             - name: http
@@ -112,7 +116,7 @@ spec:
             - name: SESSION_MAX_AGE_SECONDS
               value: {{ $proxy.session.maxAgeSeconds | quote }}
             - name: GATEWAY_ORIGIN
-              value: {{ $proxy.gatewayOrigin | quote }}
+              value: {{ $gatewayOrigin | quote }}
             - name: GATEWAY_TLS_INSECURE
               value: {{ $proxy.gatewayTlsInsecure | quote }}
             - name: GATEWAY_CONNECT_TIMEOUT_MS

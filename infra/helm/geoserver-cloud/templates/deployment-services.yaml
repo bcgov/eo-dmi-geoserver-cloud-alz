@@ -25,6 +25,8 @@ spec:
       app.kubernetes.io/component: {{ $name }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-config.yaml") $ | sha256sum }}
       labels:
         {{- include "geoserver-cloud.labels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $name }}
@@ -58,6 +60,9 @@ spec:
             medium: Memory
             sizeLimit: 512Mi
         {{- if ne $name "acl" }}
+        - name: gwc-cache
+          emptyDir:
+            sizeLimit: 512Mi
         - name: deployment-config
           configMap:
             name: {{ include "geoserver-cloud.fullname" $ }}-config
@@ -174,23 +179,23 @@ spec:
             # property precedence regardless of profile activation, so this is
             # the reliable way to guarantee every target matches our Services.
             - name: TARGETS_ACL
-              value: http://acl:8080
+              value: {{ printf "http://acl:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "acl"))) }}
             - name: TARGETS_WFS
-              value: http://wfs:8080
+              value: {{ printf "http://wfs:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wfs"))) }}
             - name: TARGETS_WMS
-              value: http://wms:8080
+              value: {{ printf "http://wms:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wms"))) }}
             - name: TARGETS_WCS
-              value: http://wcs:8080
+              value: {{ printf "http://wcs:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wcs"))) }}
             - name: TARGETS_WPS
-              value: http://wps:8080
+              value: {{ printf "http://wps:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "wps"))) }}
             - name: TARGETS_REST
-              value: http://rest:8080
+              value: {{ printf "http://rest:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "rest"))) }}
             - name: TARGETS_GWC
-              value: http://gwc:8080
+              value: {{ printf "http://gwc:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "gwc"))) }}
             - name: TARGETS_WEBUI
-              value: http://webui:8080
+              value: {{ printf "http://webui:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "webui"))) }}
             - name: TARGETS_WEBUI_DEMO
-              value: http://webui:8080
+              value: {{ printf "http://webui:%d" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "webui"))) }}
             {{- end }}
             # This image defaults management.server.port to 8081, a separate
             # connector from the app's own port 8080 - same root cause as the
@@ -201,11 +206,11 @@ spec:
             # webui/wms/rest/gwc bundle GeoWebCache integration, which defaults
             # to /opt/app/data_directory/gwc - unwritable under
             # readOnlyRootFilesystem with no volume mounted there. Redirect it
-            # onto the scratch emptyDir already mounted at /tmp. This is a
-            # RAM-backed tmpfs, fine to unblock startup, but not a substitute
-            # for a properly sized, disk-backed cache volume in production.
+            # onto a bounded disk-backed emptyDir at an independent path. Keeping
+            # the cache outside the RAM-backed scratch volume prevents tile
+            # growth from consuming the pod's memory limit.
             - name: GWC_CACHE_DIRECTORY
-              value: /tmp/gwc-cache
+              value: /var/cache/geoserver
             - name: PGCONFIG_HOST
               value: {{ include "geoserver-cloud.databaseHost" $ | quote }}
             - name: PGCONFIG_PORT
@@ -249,7 +254,7 @@ spec:
                   name: {{ $.Values.secrets.runtime.name }}
                   key: {{ $.Values.secrets.runtime.keys.rabbitmqPassword }}
             - name: ACL_URL
-              value: http://acl:8080/acl/api
+              value: {{ printf "http://acl:%d/acl/api" (int (include "geoserver-cloud.servicePort" (dict "root" $ "name" "acl"))) }}
             - name: ACL_ENABLED
               value: {{ if eq $name "wps" }}"false"{{ else }}"true"{{ end }}
             - name: ACL_USERNAME
@@ -281,6 +286,8 @@ spec:
             - name: deployment-config
               mountPath: /etc/gscloud/deployment-config
               readOnly: true
+            - name: gwc-cache
+              mountPath: /var/cache/geoserver
             - name: scratch
               mountPath: /tmp
           {{- else }}

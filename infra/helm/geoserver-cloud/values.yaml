@@ -55,8 +55,8 @@ serviceDefaults:
   terminationGracePeriodSeconds: 60
   resources:
     requests:
-      cpu: "50m"
-      memory: "500Mi"
+      cpu: "500m"
+      memory: "1Gi"
   autoscaling:
     enabled: true
     minReplicas: 2
@@ -98,7 +98,25 @@ services:
     image: gateway
   webui:
     image: webui
-    replicas: 2
+    replicas: 1
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 1
+      targetCPUUtilizationPercentage: 70
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
   wms:
     image: wms
     replicas: 2
@@ -187,11 +205,11 @@ proxy:
       periodSeconds: 10
       timeoutSeconds: 5
       failureThreshold: 6
-  gatewayOrigin: http://gateway:8080
-  publicOrigin: https://eo-dmi-geoserver-test.apps.silver.devops.gov.bc.ca
+  gatewayOrigin: ""
+  publicOrigin: ""
   route:
     enabled: true
-    host: eo-dmi-geoserver-test.apps.silver.devops.gov.bc.ca
+    host: ""
     tls:
       termination: edge
       insecureEdgeTerminationPolicy: Redirect
@@ -222,6 +240,8 @@ proxy:
   geoserver:
     basePath: /geoserver/cloud
     userGroupService: default
+    # Comma-separated lower-case OIDC principals that retain proxy.oidc.oidcRoles.
+    # All other authenticated OIDC users receive ROLE_AUTHENTICATED.
     adminPrincipals: ""
   extraEnv: {}
 

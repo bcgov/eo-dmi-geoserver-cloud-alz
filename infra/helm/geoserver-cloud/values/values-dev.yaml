@@ -30,6 +30,9 @@ services:
     replicas: 1
 
 proxy:
+  publicOrigin: https://eo-dmi-geoserver-dev.apps.silver.devops.gov.bc.ca
+  route:
+    host: eo-dmi-geoserver-dev.apps.silver.devops.gov.bc.ca
   oidc:
     issuer: https://test.loginproxy.gov.bc.ca/auth/realms/standard
     clientId: eo-dmi-geoserver-cloud-alz-6502

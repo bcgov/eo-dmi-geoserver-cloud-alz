@@ -27,6 +27,11 @@ The namespace owner must provide:
 - A published `node-oidc-proxy` image in the approved Artifactory local
   repository. The chart does not build or push application images.
 - An approved pgBackRest backup storage class and a tested restore procedure.
+- An optional approved off-cluster S3-compatible pgBackRest repository. When
+  enabled, provide its endpoint, bucket, access key, and secret key through the
+  Crunchy values. The Crunchy chart creates the release-scoped S3 Secret.
+- RabbitMQ PVC storage is capped at `1Gi` (1024Mi); larger values are rejected
+  by the chart schema.
 - RabbitMQ is intentionally a single warm broker, matching the Azure Container
   Apps design. Do not raise `rabbitmq.replicas` without adding and validating a
   real RabbitMQ clustering and peer-discovery design.
@@ -66,10 +71,10 @@ Crunchy Postgres uses the BC Gov local repository:
 artifacts.developer.gov.bc.ca/bcgov-docker-local/crunchy-postgres-gis:ubi9-18.1-3.6-2547
 ```
 
-The project-built proxy image uses the approved GHCR repository:
+The project-built proxy image uses the approved Artifactory local repository:
 
 ```text
-ghcr.io/bcgov/eo-dmi-geoserver-cloud-alz/node-oidc-proxy:<immutable-tag>
+artifacts.developer.gov.bc.ca/bcgov-docker-local/node-oidc-proxy:<immutable-tag>
 ```
 
 Build and publish that image through the approved platform process before the
@@ -116,12 +121,14 @@ operator-created Secret and pgBouncer Service before it installs this chart.
 Run these commands before cluster mutation:
 
 ```powershell
-helm lint infra/helm/crunchy-postgres --strict
+helm lint infra/helm/crunchy-postgres --strict `
+  -f infra/helm/crunchy-postgres/values/values-dev.yaml
 helm template crunchy-postgres infra/helm/crunchy-postgres `
   --namespace geoserver-dev `
   -f infra/helm/crunchy-postgres/values/values-dev.yaml `
   > rendered-crunchy-dev.yaml
-helm lint infra/helm/geoserver-cloud --strict
+helm lint infra/helm/geoserver-cloud --strict `
+  -f infra/helm/geoserver-cloud/values/values-dev.yaml
 helm template geoserver-cloud infra/helm/geoserver-cloud `
   --namespace geoserver-dev `
   -f infra/helm/geoserver-cloud/values/values-dev.yaml `
@@ -131,6 +138,13 @@ helm template geoserver-cloud infra/helm/geoserver-cloud `
   -ValuesFile infra/helm/geoserver-cloud/values/values-dev.yaml `
   -CrunchyReleaseName crunchy-postgres `
   -RequireProxy -RequireRuntimeSecret
+```
+
+On macOS or Linux, install `kubeconform` and run the cross-platform validator:
+
+```bash
+infra/helm/geoserver-cloud/scripts/validate.sh \
+  infra/helm/geoserver-cloud/values/values-dev.yaml
 ```
 
 Review the Crunchy render for the `PostgresCluster`, pgBackRest resources, and
@@ -147,6 +161,12 @@ Set these non-secret values for the target environment before installation:
 - `proxy.publicOrigin`
 - `proxy.route.host` when `proxy.route.enabled` is true
 - `images.proxy.tag`
+
+The base values intentionally leave the public host empty so a deployment
+cannot silently use another environment's OIDC callback. Every environment
+values file must set both `proxy.publicOrigin` and `proxy.route.host` to the
+same approved host. The development example uses
+`eo-dmi-geoserver-dev.apps.silver.devops.gov.bc.ca`.
 
 Supply the OIDC client secret on the terminal for the first install. Helm stores
 the rendered Secret in release metadata, so do not place the value in a committed
@@ -204,7 +224,16 @@ oc apply --dry-run=server -f rendered-geoserver-dev.yaml
 
 This catches restricted-v2 SCC, quota, image-policy, CRD, and storage errors. The
 chart does not create namespaces, NetworkPolicies, Routes other than the optional
-proxy Route, or cluster-scoped RBAC.
+proxy Route, or cluster-scoped RBAC. NetworkPolicy ownership remains with the
+platform namespace baseline. That baseline must allow the approved Route to reach
+`oidc-proxy`, the proxy to reach `gateway`, application Services to reach pgBouncer
+and RabbitMQ, and the database-init Job to reach pgBouncer.
+
+The application Service and Deployment names are intentionally fixed to
+`gateway`, `webui`, `wms`, `wfs`, `wcs`, `wps`, `rest`, `gwc`, `acl`,
+`oidc-proxy`, and `rabbitmq` because the gateway topology uses those names as
+stable DNS targets. Two releases cannot coexist in one namespace. Use separate
+namespaces for parallel environments or release tests.
 
 The local Helm validator cannot prove server-side SCC admission, arbitrary-UID
 image behavior, or the configured actuator paths against running containers. The
@@ -245,8 +274,10 @@ infra/helm/configure-geoserver-security.sh \
 
 See that script's own header comment for the full rationale, including why
 it talks to GeoServer via `oc exec` into a running gateway pod rather than a
-tunnel, and a documented curl/`oc exec` `-o /dev/null` quirk on this cluster
-that the script works around internally.
+tunnel, and the documented curl/`oc exec` `-o /dev/null` quirk on this cluster
+that the script works around internally. The script requires `perl` for the
+portable whole-file XML update and does not place the admin password in an
+`oc exec` argument.
 
 ## Install and smoke test
 
@@ -271,9 +302,20 @@ security integration checks against the proxy endpoint.
 
 ## Backup, upgrade, and rollback
 
-Production values use Crunchy's pgBackRest PVC repository. Before a stateful
-upgrade, execute and verify the platform-approved pgBackRest backup and restore
-test. A Helm rollback does not reverse database schema changes.
+The default profile uses the Crunchy pgBackRest PVC repository. An off-cluster
+S3-compatible repository is optional; when enabled, set
+`crunchy.pgBackRest.s3.enabled=true`, configure `bucket`, `endpoint`, and
+`secretName`, and provide the referenced Secret through the platform process.
+Before a stateful upgrade, execute and verify the approved pgBackRest backup
+and restore test. A Helm rollback does not reverse database schema changes.
+
+RabbitMQ's `RABBITMQ_DEFAULT_USER` and `RABBITMQ_DEFAULT_PASS` values are
+bootstrap inputs. RabbitMQ ignores them after the data PVC is initialized.
+Do not rotate the runtime Secret key by itself, because that changes client
+credentials without changing the broker. Perform password rotation as a
+maintenance operation against the running broker, verify the new credential,
+then update the runtime Secret and restart the application workloads. Record
+the procedure with the namespace owner before production use.
 
 For an application-only rollback:
 

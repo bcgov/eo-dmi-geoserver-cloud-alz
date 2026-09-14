@@ -8,8 +8,14 @@ param(
 $ErrorActionPreference = "Stop"
 $chartRoot = Split-Path -Parent $PSScriptRoot
 $renderedPath = Join-Path $env:TEMP "geoserver-cloud-rendered.yaml"
+$resolvedValuesFile = if ($ValuesFile) {
+  Resolve-Path $ValuesFile
+}
+else {
+  Join-Path $chartRoot "values\values-dev.yaml"
+}
 
-helm lint $chartRoot --strict
+helm lint $chartRoot --strict -f $resolvedValuesFile
 if ($LASTEXITCODE -ne 0) { throw "helm lint failed" }
 
 $templateArgs = @(
@@ -19,9 +25,7 @@ $templateArgs = @(
   "--namespace",
   "geoserver-dev"
 )
-if ($ValuesFile) {
-  $templateArgs += @("-f", (Resolve-Path $ValuesFile))
-}
+$templateArgs += @("-f", $resolvedValuesFile)
 $templateArgs += @("--set-string", "database.crunchyReleaseName=$CrunchyReleaseName")
 if ($RequireProxy) {
   $templateArgs += @("--set", "proxy.route.enabled=true")
@@ -87,8 +91,7 @@ $imageLines = [regex]::Matches($rendered, "(?m)^\s+image:\s+(\S+)$")
 foreach ($imageLine in $imageLines) {
   $image = $imageLine.Groups[1].Value
   $isApprovedArtifactoryImage = $image.StartsWith("artifacts.developer.gov.bc.ca/")
-  $isApprovedProxyImage = $image -match '^ghcr\.io/bcgov/eo-dmi-geoserver-cloud-alz/node-oidc-proxy:'
-  if (-not $isApprovedArtifactoryImage -and -not $isApprovedProxyImage) {
+  if (-not $isApprovedArtifactoryImage) {
     throw "Rendered image is outside Platform Artifactory: $($imageLine.Groups[1].Value)"
   }
 }
@@ -109,7 +112,7 @@ if ($RequireProxy) {
   $proxyService = $resources | Where-Object { $_.Name -eq "oidc-proxy" -and $_.Kind -eq "Service" }
   if (-not $proxyWorkload) { throw "Proxy validation requested but oidc-proxy Deployment is missing" }
   if (-not $proxyService) { throw "Proxy validation requested but oidc-proxy Service is missing" }
-  if ($proxyWorkload.Content -notmatch "(?m)^\s+image:\s+(?:artifacts\.developer\.gov\.bc\.ca/bcgov-docker-local|ghcr\.io/bcgov/eo-dmi-geoserver-cloud-alz)/node-oidc-proxy:") {
+  if ($proxyWorkload.Content -notmatch "(?m)^\s+image:\s+artifacts\.developer\.gov\.bc\.ca/bcgov-docker-local/node-oidc-proxy:") {
     throw "Proxy Deployment does not use an approved proxy image path"
   }
   $routes = @($resources | Where-Object { $_.Kind -eq "Route" })

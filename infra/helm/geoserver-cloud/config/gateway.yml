@@ -10,15 +10,15 @@ geoserver:
 basepath: ${geoserver.base-path}
 
 targets:
-  acl: ${TARGETS_ACL:http://acl:8080}
-  wfs: ${TARGETS_WFS:http://wfs:8080}
-  wms: ${TARGETS_WMS:http://wms:8080}
-  wcs: ${TARGETS_WCS:http://wcs:8080}
-  wps: ${TARGETS_WPS:http://wps:8080}
-  rest: ${TARGETS_REST:http://rest:8080}
-  gwc: ${TARGETS_GWC:http://gwc:8080}
-  webui: ${TARGETS_WEBUI:http://webui:8080}
-  webui-demo: ${TARGETS_WEBUI_DEMO:http://webui:8080}
+  acl: ${TARGETS_ACL}
+  wfs: ${TARGETS_WFS}
+  wms: ${TARGETS_WMS}
+  wcs: ${TARGETS_WCS}
+  wps: ${TARGETS_WPS}
+  rest: ${TARGETS_REST}
+  gwc: ${TARGETS_GWC}
+  webui: ${TARGETS_WEBUI}
+  webui-demo: ${TARGETS_WEBUI_DEMO}
 
 server:
   port: 8080

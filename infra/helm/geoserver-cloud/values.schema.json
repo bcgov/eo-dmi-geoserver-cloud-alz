@@ -95,8 +95,7 @@
       "type": "object",
       "required": ["requests"],
       "properties": {
-        "requests": { "$ref": "#/definitions/cpuMemory" },
-        "limits": { "$ref": "#/definitions/cpuMemory" }
+        "requests": { "$ref": "#/definitions/cpuMemory" }
       },
       "additionalProperties": false
     },
@@ -221,6 +220,7 @@
       "required": ["image"],
       "properties": {
         "image": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "replicas": { "type": "integer", "minimum": 1 },
         "terminationGracePeriodSeconds": {
           "type": "integer",
@@ -278,7 +278,7 @@
         "resources": { "$ref": "#/definitions/resources" },
         "autoscaling": { "$ref": "#/definitions/autoscaling" },
         "probes": { "$ref": "#/definitions/probes" },
-        "gatewayOrigin": { "type": "string", "minLength": 1 },
+        "gatewayOrigin": { "type": "string" },
         "publicOrigin": { "type": "string" },
         "route": {
           "type": "object",
@@ -391,7 +391,10 @@
           "type": "object",
           "required": ["size", "storageClassName"],
           "properties": {
-            "size": { "type": "string", "minLength": 1 },
+            "size": {
+              "type": "string",
+              "pattern": "^(?:(?:[1-9][0-9]{0,2}|10[0-1][0-9]|102[0-3]|1024)Mi|1Gi)$"
+            },
             "storageClassName": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": false

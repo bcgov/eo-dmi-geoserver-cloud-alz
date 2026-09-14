@@ -30,18 +30,18 @@ crunchy:
 
   instances:
     name: db
-    replicas: 1
+    replicas: 2
     metadata:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9187"
     dataVolumeClaimSpec:
-      storage: 500Mi
-      walStorage: 500Mi
+      storage: 1Gi
+      walStorage: 1Gi
       storageClassName: netapp-block-standard
     requests:
-      cpu: 50m
-      memory: 250Mi
+      cpu: 500m
+      memory: 2Gi
     replicaCertCopy:
       requests:
         cpu: 50m
@@ -59,6 +59,7 @@ crunchy:
       endpoint: ""
       accessKey: ""
       secretKey: ""
+      region: ca-central-1
       fullBackupSchedule: "0 9 * * *"
       incrementalBackupSchedule: "0 */4 * * *"
     pvc:
@@ -86,8 +87,8 @@ crunchy:
   patroni:
     postgresql:
       pg_hba:
-        - host all all 0.0.0.0/0 md5
-        - host all all ::1/128 md5
+        - host all all 10.0.0.0/8 scram-sha-256
+        - host all all ::1/128 scram-sha-256
       parameters:
         log_min_duration_statement: 1000ms
         shared_buffers: 512MB
@@ -120,7 +121,6 @@ crunchy:
     - name: geoserver
       databases:
         - geoserver
-      options: SUPERUSER CREATEDB CREATEROLE
     - name: postgres
       databases:
         - postgres
